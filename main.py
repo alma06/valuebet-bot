@@ -369,9 +369,36 @@ class ValueBotMonitor:
             # Sistema de selección de picks: garantizar MIN_DAILY_PICKS a MAX_DAILY_PICKS
             if len(candidates) < MIN_DAILY_PICKS:
                 logger.warning(f"⚠️  Solo {len(candidates)} picks encontrados, mínimo requerido: {MIN_DAILY_PICKS}")
-                logger.info("🔧 Intentando ajustar filtros dinámicamente...")
-                # Si hay muy pocos, mantener todos y registrar advertencia
-                selected_candidates = candidates
+                logger.info("🔧 Ajustando filtros dinámicamente para alcanzar mínimo...")
+                
+                # Intentar con filtros más relajados
+                relaxed_scanner = EnhancedValueScanner(
+                    min_odd=1.3,  # Más bajo
+                    max_odd=4.0,  # Más alto
+                    min_prob=0.48  # Más bajo (48%)
+                ) if ENHANCED_SYSTEM_AVAILABLE else ValueScanner(
+                    min_odd=1.3,
+                    max_odd=4.0,
+                    min_prob=0.48
+                )
+                
+                if ENHANCED_SYSTEM_AVAILABLE and isinstance(relaxed_scanner, EnhancedValueScanner):
+                    relaxed_candidates = relaxed_scanner.find_value_bets_with_movement(events)
+                else:
+                    relaxed_candidates = relaxed_scanner.find_value_bets(events)
+                
+                logger.info(f"📈 Con filtros relajados: {len(relaxed_candidates)} candidatos")
+                
+                # Usar los relajados si hay más
+                if len(relaxed_candidates) >= MIN_DAILY_PICKS:
+                    candidates = relaxed_candidates
+                    logger.info(f"✅ Usando {len(candidates)} picks con filtros ajustados")
+                else:
+                    # Mantener todos los disponibles
+                    logger.warning(f"⚠️  Aún insuficientes. Usando todos: {len(relaxed_candidates)}")
+                    candidates = relaxed_candidates if len(relaxed_candidates) > len(candidates) else candidates
+                
+                selected_candidates = candidates[:MAX_DAILY_PICKS]
             elif len(candidates) > MAX_DAILY_PICKS:
                 logger.info(f"📈 {len(candidates)} picks disponibles, seleccionando top {MAX_DAILY_PICKS} por EV")
                 # Calcular EV real para cada candidato
@@ -499,20 +526,20 @@ class ValueBotMonitor:
             logger.info("No value opportunities in imminent events")
             return 0
         
-        # Obtener usuarios premium
+        # Obtener usuarios premium y gratuitos
         users = list(self.users_manager.users.values())
         premium_users = [user for user in users if user.is_premium_active()]
+        free_users = [user for user in users if not user.is_premium_active()]
         
-        if not premium_users:
-            logger.info("No premium users to send alerts")
-            return 0
-        
-        logger.info(f" {len(premium_users)} premium users available")
+        logger.info(f"📊 {len(premium_users)} premium users, {len(free_users)} free users available")
         
         total_alerts_sent = 0
         
-        # Enviar alertas a usuarios premium
-        for candidate in value_candidates:
+        # 1. USUARIOS PREMIUM: reciben 3-5 picks (todos los value_candidates hasta MAX)
+        premium_picks = value_candidates[:MAX_DAILY_PICKS]
+        logger.info(f"📤 Enviando {len(premium_picks)} picks a usuarios premium")
+        
+        for candidate in premium_picks:
             # Verificar si ya enviamos esta alerta
             candidate_key = f"{candidate.get('id', '')}_{candidate.get('selection', '')}"
             
@@ -540,7 +567,30 @@ class ValueBotMonitor:
                 if alerts_sent_for_candidate >= len(premium_users):
                     break
         
-        logger.info(f" Total alerts sent: {total_alerts_sent}")
+        # 2. USUARIOS GRATIS: reciben solo EL MEJOR pick (máximo 1 al día)
+        if free_users and value_candidates:
+            best_pick = value_candidates[0]  # El mejor ordenado por EV
+            logger.info(f"🎁 Enviando 1 pick (mejor EV) a {len(free_users)} usuarios gratis")
+            
+            best_pick_key = f"{best_pick.get('id', '')}_{best_pick.get('selection', '')}"
+            
+            for user in free_users:
+                # Verificar límites (usuarios gratis: máximo 1 al día)
+                if user.alerts_sent_today >= 1:
+                    continue
+                
+                # Verificar duplicados
+                alert_key = f"{user.chat_id}_{best_pick_key}"
+                if alert_key in self.sent_alerts:
+                    continue
+                
+                # Enviar alerta
+                success = await self.send_alert_to_user(user, best_pick)
+                if success:
+                    total_alerts_sent += 1
+                    logger.info(f"✅ Pick gratis enviado a usuario {user.chat_id}")
+        
+        logger.info(f"✅ Total alerts sent: {total_alerts_sent}")
         return total_alerts_sent
 
     async def daily_initialization(self):
