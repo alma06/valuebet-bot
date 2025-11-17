@@ -347,6 +347,47 @@ class HistoricalDatabase:
         except Exception as e:
             logger.error(f"Error verifying prediction: {e}")
             return False
+    
+    # ==================== LINE MOVEMENT ====================
+    
+    def save_odds_snapshot(self, snapshot: Dict) -> bool:
+        """Guarda snapshot de cuotas para tracking de movimiento"""
+        try:
+            data = {
+                'timestamp': snapshot['timestamp'],
+                'event_id': snapshot['event_id'],
+                'sport_key': snapshot.get('sport_key'),
+                'bookmaker': snapshot['bookmaker'],
+                'market': snapshot['market'],
+                'selection': snapshot['selection'],
+                'odds': snapshot['odds'],
+                'point': snapshot.get('point')
+            }
+            
+            self.supabase.table('odds_snapshots').insert(data).execute()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving odds snapshot: {e}")
+            return False
+    
+    def get_odds_history(self, event_id: str, hours: int = 24) -> List[Dict]:
+        """Obtiene histórico de cuotas de un evento"""
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+            
+            response = self.supabase.table('odds_snapshots') \
+                .select('*') \
+                .eq('event_id', event_id) \
+                .gte('timestamp', cutoff) \
+                .order('timestamp', desc=False) \
+                .execute()
+            
+            return response.data
+            
+        except Exception as e:
+            logger.error(f"Error fetching odds history: {e}")
+            return []
 
 
 # Instancia global

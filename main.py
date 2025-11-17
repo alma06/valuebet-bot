@@ -38,10 +38,14 @@ from utils.sport_translator import translate_sport
 try:
     from data.historical_db import historical_db
     from data.stats_api import injury_scraper
+    from analytics.line_movement import line_tracker
+    from scanner.enhanced_scanner import EnhancedValueScanner
     ENHANCED_SYSTEM_AVAILABLE = True
 except ImportError:
     historical_db = None
     injury_scraper = None
+    line_tracker = None
+    EnhancedValueScanner = None
     ENHANCED_SYSTEM_AVAILABLE = False
 
 # Configurar encoding UTF-8 para Windows
@@ -94,11 +98,23 @@ class ValueBotMonitor:
     
     def __init__(self):
         self.fetcher = OddsFetcher(api_key=API_KEY)
-        self.scanner = ValueScanner(
-            min_odd=MIN_ODD, 
-            max_odd=MAX_ODD, 
-            min_prob=MIN_PROB
-        )
+        
+        # Usar scanner mejorado si está disponible
+        if ENHANCED_SYSTEM_AVAILABLE and EnhancedValueScanner:
+            self.scanner = EnhancedValueScanner(
+                min_odd=MIN_ODD, 
+                max_odd=MAX_ODD, 
+                min_prob=MIN_PROB
+            )
+            logger.info("✅ Usando EnhancedValueScanner con line movement")
+        else:
+            self.scanner = ValueScanner(
+                min_odd=MIN_ODD, 
+                max_odd=MAX_ODD, 
+                min_prob=MIN_PROB
+            )
+            logger.info("⚠️  Usando ValueScanner básico")
+        
         self.notifier = TelegramNotifier(BOT_TOKEN)
         self.users_manager = get_users_manager()
         self.alerts_state = AlertsState("data/alerts_state.json", MAX_ALERTS_PER_DAY)
@@ -228,7 +244,7 @@ class ValueBotMonitor:
 
     async def fetch_and_update_events(self) -> List[Dict]:
         """
-        Obtiene eventos de las APIs y actualiza el monitoring
+        Obtiene eventos de las APIs y actualiza el monitoring + line tracking
         """
         try:
             logger.info("Fetching odds from APIs...")
@@ -267,6 +283,10 @@ class ValueBotMonitor:
                     logger.warning(f"Error processing event: {e}")
                     continue
             
+            # Guardar snapshot de cuotas para line movement tracking
+            if ENHANCED_SYSTEM_AVAILABLE and line_tracker and processed_events:
+                line_tracker.record_odds_snapshot(processed_events)
+            
             # Limpiar eventos pasados del monitoring
             current_time = datetime.now(timezone.utc)
             expired_events = [
@@ -287,31 +307,66 @@ class ValueBotMonitor:
 
     async def find_value_opportunities(self, events: List[Dict]) -> List[Dict]:
         """
-        Encuentra oportunidades de value betting usando el scanner existente
+        Encuentra oportunidades de value betting usando el scanner mejorado
         """
         try:
-            # Usar el scanner de value existente
-            candidates = self.scanner.find_value_bets(events)
-            
-            logger.info(f" Found {len(candidates)} value candidates")
-            
-            # Log de candidatos encontrados
-            for i, candidate in enumerate(candidates[:10], 1):  # Solo log primeros 10
-                sport = candidate.get('sport', 'Unknown')
-                selection = candidate.get('selection', 'Unknown')
-                odds = candidate.get('odds', 0.0)
-                prob = candidate.get('prob', 0.0) * 100
-                value = candidate.get('value', 0.0)
+            # Usar scanner mejorado si está disponible
+            if ENHANCED_SYSTEM_AVAILABLE and EnhancedValueScanner and isinstance(self.scanner, EnhancedValueScanner):
+                # Scanner con análisis de line movement
+                candidates = self.scanner.find_value_bets_with_movement(events)
                 
-                logger.info(
-                    f"  [{i}] {sport}: {selection} @ {odds:.2f} "
-                    f"(prob: {prob:.1f}%, value: {value:.3f})"
-                )
+                # Filtrar por nivel de confianza (solo high y very_high)
+                candidates = self.scanner.filter_by_confidence(candidates, min_level='high')
+                
+                logger.info(f"🎯 Found {len(candidates)} high-confidence value opportunities with movement analysis")
+                
+                # Log detallado de candidatos
+                for i, candidate in enumerate(candidates[:10], 1):
+                    sport = candidate.get('sport', 'Unknown')
+                    selection = candidate.get('selection', 'Unknown')
+                    odds = candidate.get('odds', 0.0)
+                    prob = candidate.get('prob', 0.0) * 100
+                    value = candidate.get('value', 0.0)
+                    confidence = candidate.get('confidence_level', 'unknown')
+                    steam = "🔥" if candidate.get('has_steam_move') else ""
+                    
+                    movement = candidate.get('line_movement')
+                    if movement:
+                        change = movement.get('change_percent', 0)
+                        trend_emoji = "📈" if change > 0 else "📉" if change < 0 else "➡️"
+                        logger.info(
+                            f"  [{i}] {sport}: {selection} @ {odds:.2f} "
+                            f"(prob: {prob:.1f}%, value: {value:.3f}) "
+                            f"{steam}{trend_emoji} {confidence} ({change:+.1f}%)"
+                        )
+                    else:
+                        logger.info(
+                            f"  [{i}] {sport}: {selection} @ {odds:.2f} "
+                            f"(prob: {prob:.1f}%, value: {value:.3f}) {confidence}"
+                        )
+            else:
+                # Scanner básico
+                candidates = self.scanner.find_value_bets(events)
+                
+                logger.info(f"📊 Found {len(candidates)} value candidates (basic scan)")
+                
+                # Log de candidatos encontrados
+                for i, candidate in enumerate(candidates[:10], 1):
+                    sport = candidate.get('sport', 'Unknown')
+                    selection = candidate.get('selection', 'Unknown')
+                    odds = candidate.get('odds', 0.0)
+                    prob = candidate.get('prob', 0.0) * 100
+                    value = candidate.get('value', 0.0)
+                    
+                    logger.info(
+                        f"  [{i}] {sport}: {selection} @ {odds:.2f} "
+                        f"(prob: {prob:.1f}%, value: {value:.3f})"
+                    )
             
             return candidates
             
         except Exception as e:
-            logger.error(f" Error finding value opportunities: {e}")
+            logger.error(f"❌ Error finding value opportunities: {e}")
             return []
 
     async def send_alert_to_user(self, user: User, candidate: Dict) -> bool:
@@ -518,12 +573,20 @@ class ValueBotMonitor:
 
     async def hourly_update(self):
         """
-        Actualizacin cada hora
+        Actualizacin cada hora (o cada 10 minutos en producción)
         """
-        logger.info("HOURLY UPDATE")
+        logger.info("⏰ HOURLY UPDATE")
         
         # Actualizar eventos y cuotas
         events = await self.fetch_and_update_events()
+        
+        # SISTEMA MEJORADO: Guardar snapshot de odds para line movement
+        if ENHANCED_SYSTEM_AVAILABLE and line_tracker:
+            try:
+                snapshot_count = line_tracker.record_odds_snapshot(events)
+                logger.info(f"📸 Recorded {snapshot_count} odds snapshots for line movement tracking")
+            except Exception as e:
+                logger.error(f"Error recording odds snapshot: {e}")
         
         # Procesar alertas para eventos inminentes
         alerts_sent = await self.process_alerts_for_imminent_events()
@@ -533,7 +596,7 @@ class ValueBotMonitor:
         total_monitored = len(self.monitored_events)
         
         logger.info(
-            f" Update summary: {total_monitored} events monitored, "
+            f"📊 Update summary: {total_monitored} events monitored, "
             f"{imminent_count} imminent, {alerts_sent} alerts sent"
         )
 
