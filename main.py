@@ -77,10 +77,10 @@ MAX_ALERTS_PER_DAY = int(os.getenv("MAX_ALERTS_PER_DAY", "5"))
 # Deportes a monitorear
 SPORTS = os.getenv("SPORTS", "basketball_nba,soccer_epl,soccer_spain_la_liga,tennis_atp,tennis_wta,baseball_mlb").split(",")
 
-# Configuracin de tiempo
-AMERICA_TZ = ZoneInfo("America/New_York")  # Hora de Amrica
+# Configuración de tiempo
+AMERICA_TZ = ZoneInfo("America/New_York")  # Hora de América
 DAILY_START_HOUR = 6  # 6 AM
-UPDATE_INTERVAL_HOURS = 1  # Actualizar cada hora
+UPDATE_INTERVAL_MINUTES = 10  # Actualizar cada 10 minutos (mantiene Render activo)
 ALERT_WINDOW_HOURS = 4  # Alertar cuando falten menos de 4 horas
 
 # Configuracin adicional
@@ -146,11 +146,11 @@ class ValueBotMonitor:
 
     def get_next_update_time(self) -> datetime:
         """
-        Calcula la prxima hora de actualizacin (cada hora en punto)
+        Calcula la próxima actualización (cada 10 minutos)
         """
         now = datetime.now(AMERICA_TZ)
-        next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-        return next_hour
+        next_update = now + timedelta(minutes=UPDATE_INTERVAL_MINUTES)
+        return next_update
 
     def get_next_daily_start(self) -> datetime:
         """
@@ -536,7 +536,7 @@ class ValueBotMonitor:
         """
         logger.info("Starting continuous monitoring")
         logger.info(f" Daily start: {DAILY_START_HOUR}:00 AM America")
-        logger.info(f" Updates: every {UPDATE_INTERVAL_HOURS} hour(s)")
+        logger.info(f" Updates: every {UPDATE_INTERVAL_MINUTES} minutes")
         logger.info(f" Alert window: {ALERT_WINDOW_HOURS} hours before event")
         
         # Verificar configuracin
