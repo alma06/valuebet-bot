@@ -1,0 +1,154 @@
+{
+  "last_updated": "2025-11-17T07:20:28.035831+00:00",
+  "total_users": 4,
+  "total_transactions": 9,
+  "referrals": {
+    "user_123": {
+      "user_id": "user_123",
+      "code": "20730E1479DD",
+      "referrer_id": null,
+      "referred_users": [
+        "user_456",
+        "user_789",
+        "user_abc"
+      ],
+      "referred_paid": [
+        "user_456",
+        "user_789",
+        "user_abc"
+      ],
+      "total_referrals": 3,
+      "paid_referrals": 3,
+      "balance_usd": 15.0,
+      "total_earned": 15.0,
+      "free_weeks_earned": 1,
+      "registered_at": "2025-11-17T07:20:28.026589+00:00",
+      "last_reward_date": "2025-11-17T07:20:28.032853+00:00"
+    },
+    "user_456": {
+      "user_id": "user_456",
+      "code": "CA14A6662940",
+      "referrer_id": "user_123",
+      "referred_users": [],
+      "referred_paid": [],
+      "total_referrals": 0,
+      "paid_referrals": 0,
+      "balance_usd": 0.0,
+      "total_earned": 0.0,
+      "free_weeks_earned": 0,
+      "registered_at": "2025-11-17T07:20:28.027533+00:00",
+      "last_reward_date": null
+    },
+    "user_789": {
+      "user_id": "user_789",
+      "code": "FB02845B58A7",
+      "referrer_id": "user_123",
+      "referred_users": [],
+      "referred_paid": [],
+      "total_referrals": 0,
+      "paid_referrals": 0,
+      "balance_usd": 0.0,
+      "total_earned": 0.0,
+      "free_weeks_earned": 0,
+      "registered_at": "2025-11-17T07:20:28.030113+00:00",
+      "last_reward_date": null
+    },
+    "user_abc": {
+      "user_id": "user_abc",
+      "code": "7AAE14A59EB9",
+      "referrer_id": "user_123",
+      "referred_users": [],
+      "referred_paid": [],
+      "total_referrals": 0,
+      "paid_referrals": 0,
+      "balance_usd": 0.0,
+      "total_earned": 0.0,
+      "free_weeks_earned": 0,
+      "registered_at": "2025-11-17T07:20:28.031680+00:00",
+      "last_reward_date": null
+    }
+  },
+  "transactions": [
+    {
+      "id": 1,
+      "user_id": "user_123",
+      "type": "referral_registered",
+      "amount": 0.0,
+      "referred_user": "user_456",
+      "description": "Nuevo referido registrado: user_456",
+      "timestamp": "2025-11-17T07:20:28.027545+00:00"
+    },
+    {
+      "id": 2,
+      "user_id": "user_123",
+      "type": "commission_earned",
+      "amount": 5.0,
+      "referred_user": "user_456",
+      "description": "Comisión por pago Premium de referido user_456: $50.00",
+      "timestamp": "2025-11-17T07:20:28.028541+00:00"
+    },
+    {
+      "id": 3,
+      "user_id": "user_123",
+      "type": "referral_registered",
+      "amount": 0.0,
+      "referred_user": "user_789",
+      "description": "Nuevo referido registrado: user_789",
+      "timestamp": "2025-11-17T07:20:28.030129+00:00"
+    },
+    {
+      "id": 4,
+      "user_id": "user_123",
+      "type": "commission_earned",
+      "amount": 5.0,
+      "referred_user": "user_789",
+      "description": "Comisión por pago Premium de referido user_789: $50.00",
+      "timestamp": "2025-11-17T07:20:28.031116+00:00"
+    },
+    {
+      "id": 5,
+      "user_id": "user_123",
+      "type": "referral_registered",
+      "amount": 0.0,
+      "referred_user": "user_abc",
+      "description": "Nuevo referido registrado: user_abc",
+      "timestamp": "2025-11-17T07:20:28.031687+00:00"
+    },
+    {
+      "id": 6,
+      "user_id": "user_123",
+      "type": "commission_earned",
+      "amount": 5.0,
+      "referred_user": "user_abc",
+      "description": "Comisión por pago Premium de referido user_abc: $50.00",
+      "timestamp": "2025-11-17T07:20:28.032989+00:00"
+    },
+    {
+      "id": 7,
+      "user_id": "user_123",
+      "type": "free_week_earned",
+      "amount": 50.0,
+      "referred_user": null,
+      "description": "Semana Premium gratis ganada (3 referidos pagos)",
+      "timestamp": "2025-11-17T07:20:28.032994+00:00"
+    },
+    {
+      "id": 8,
+      "user_id": "user_123",
+      "type": "free_week_redeemed",
+      "amount": 50.0,
+      "referred_user": null,
+      "description": "Semana Premium gratis canjeada",
+      "timestamp": "2025-11-17T07:20:28.034368+00:00"
+    },
+    {
+      "id": 9,
+      "user_id": "user_123",
+      "type": "withdrawal_requested",
+      "amount": 10.0,
+      "referred_user": null,
+      "description": "Solicitud de retiro de $10.00",
+      "timestamp": "2025-11-17T07:20:28.035436+00:00"
+    }
+  ]
+}

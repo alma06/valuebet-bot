@@ -1,0 +1,317 @@
+"""notifier/alert_formatter.py - Formatea mensajes diferenciados para usuarios gratuitos y premium.
+"""
+from typing import Dict
+import sys
+from pathlib import Path
+
+# Asegurar que utils esté en el path
+if str(Path(__file__).parent.parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from utils.sport_translator import translate_sport
+from utils.lineup_analyzer import get_lineup_section
+
+
+def format_free_alert(candidate: Dict) -> str:
+    """
+    Mensaje resumido para usuarios gratuitos.
+    
+    Solo incluye:
+    - Equipos y deporte
+    - Tipo de mercado específico
+    - Cuota y selección clara
+    - Casa de apuestas
+    """
+    lines = []
+    
+    # Header simple
+    sport_es = translate_sport(candidate.get('sport_key', ''), candidate.get('sport'))
+    lines.append(f"🎯 **{sport_es.upper()}**")
+    lines.append(f"⚽ **{candidate.get('event', 'N/A')}**")
+    lines.append("")
+    
+    # Información detallada del mercado
+    market = candidate.get('market', 'N/A')
+    selection = candidate['selection']
+    odd = candidate['odds']
+    bookmaker = candidate.get('bookmaker', 'N/A')
+    
+    # Formatear según el tipo de mercado
+    lines.append(f"📊 **MERCADO:** {market}")
+    lines.append(f"✅ **PRONÓSTICO:** {selection}")
+    lines.append(f"💰 **CUOTA:** {odd:.2f}")
+    lines.append(f"🏠 **CASA:** {bookmaker}")
+    
+    # Si hay información adicional del mercado (handicap, totales, etc.)
+    if candidate.get('point') is not None:
+        lines.append(f"📈 **LÍNEA:** {candidate['point']}")
+    
+    if candidate.get('total') is not None:
+        lines.append(f"📊 **TOTAL:** {candidate['total']}")
+    
+    # Información de valor básica
+    if candidate.get('value', 0) > 0:
+        lines.append(f"💎 **VALOR:** {candidate['value']:.3f}")
+    
+    if candidate.get('edge_percent', 0) > 0:
+        lines.append(f"🎯 **VENTAJA:** +{candidate['edge_percent']:.1f}%")
+    
+    # Análisis detallado del pronóstico
+    lines.append("")
+    lines.append("🔍 **ANÁLISIS DETALLADO:**")
+    
+    if candidate.get('real_probability', 0) > 0:
+        lines.append(f"📊 **Probabilidad real:** {candidate['real_probability']:.0f}%")
+        lines.append(f"📉 **Prob. implícita casa:** {(100/candidate['odds']):.0f}%")
+        lines.append(f"💎 **Diferencia a tu favor:** +{candidate['real_probability']-(100/candidate['odds']):.1f}%")
+    
+    # Análisis específico del mercado
+    market_key = candidate.get('market_key', '')
+    if market_key == 'spreads' or 'hándicap' in candidate.get('market', '').lower():
+        lines.append("🎯 **Tipo:** Hándicap - Línea favorable según estadísticas")
+    elif market_key == 'h2h' or 'ganador' in candidate.get('market', '').lower():
+        lines.append("⚽ **Tipo:** Ganador - Probabilidad subestimada por el mercado")
+    elif market_key == 'totals' or 'total' in candidate.get('market', '').lower():
+        lines.append("📊 **Tipo:** Totales - Línea mal calibrada por la casa")
+    
+    lines.append("✅ **Recomendación:** APOSTAR - Value bet confirmado")
+    
+    # Análisis de alineaciones usando sistema especializado
+    lines.append("")
+    lineup_analysis = get_lineup_section(candidate, is_premium=False)
+    lines.extend(lineup_analysis)
+    
+    # Nota sobre mejora de cuotas
+    lines.append("")
+    lines.append("💡 **OPTIMIZA TUS GANANCIAS:**")
+    lines.append("🔍 Busca esta misma apuesta en otras casas")
+    lines.append("📈 Puedes encontrar cuotas mejores (hasta 0.05-0.10 más)")
+    lines.append("💰 Cada 0.05 de mejora = +5% más ganancia")
+    lines.append("")
+    lines.append("🎯 **MEJORA TU % DE ACIERTO:**")
+    lines.append("📊 Si buscas cuotas más pequeñas/conservadoras")
+    lines.append("✅ Puedes acomodar mejor la apuesta a mi pronóstico")
+    lines.append("🔧 Ajusta líneas de hándicap o totales más favorables")
+    lines.append("📈 Menor riesgo = Mayor porcentaje de aciertos")
+    
+    # Call to action
+    lines.append("")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append("🌟 UPGRADE A PREMIUM 🌟")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append("")
+    lines.append("Desbloquea:")
+    lines.append("✨ Alertas ILIMITADAS")
+    lines.append("📊 Análisis completo con estadísticas")
+    lines.append("💎 Probabilidades y valor esperado")
+    lines.append("💰 Stake recomendado según bankroll")
+    lines.append("📈 Gestión automática de bankroll")
+    lines.append("🎯 Tracking de resultados y ROI")
+    lines.append("")
+    lines.append("💬 Contacta para más info")
+    
+    return "\n".join(lines)
+
+
+def format_premium_alert(candidate: Dict, user, stake: float) -> str:
+    """
+    Mensaje completo para usuarios premium.
+    
+    Incluye todo el análisis avanzado + stake recomendado.
+    """
+    lines = []
+    
+    # Header premium
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append("💎 ALERTA PREMIUM 💎")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append("")
+    
+    # Información detallada del evento
+    sport_es = translate_sport(candidate.get('sport_key', ''), candidate.get('sport'))
+    lines.append(f"🎯 **{sport_es.upper()}**")
+    lines.append(f"⚽ **{candidate.get('event', 'N/A')}**")
+    lines.append(f"📊 **MERCADO:** {candidate.get('market', 'N/A')}")
+    lines.append(f"✅ **PRONÓSTICO:** {candidate['selection']}")
+    lines.append(f"💰 **CUOTA:** {candidate['odds']:.2f}")
+    lines.append(f"🏠 **CASA:** {candidate.get('bookmaker', 'N/A')}")
+    
+    # Información adicional del mercado
+    if candidate.get('point') is not None:
+        lines.append(f"📈 **LÍNEA/HÁNDICAP:** {candidate['point']}")
+    
+    if candidate.get('total') is not None:
+        lines.append(f"📊 **TOTAL:** {candidate['total']}")
+    
+    if candidate.get('commence_time'):
+        lines.append(f"⏰ **INICIO:** {candidate['commence_time']}")
+    
+    lines.append("")
+    
+    # Métricas de valor
+    lines.append("📈 **ANÁLISIS PROFESIONAL DE VALOR:**")
+    
+    if candidate.get('real_probability', 0) > 0:
+        lines.append(f"✅ **Prob. Real:** {candidate['real_probability']:.1f}%")
+    
+    if candidate.get('implied_probability', 0) > 0:
+        lines.append(f"📉 **Prob. Implícita:** {candidate['implied_probability']:.1f}%")
+        prob_diff = candidate.get('real_probability', 0) - candidate.get('implied_probability', 0)
+        if prob_diff > 0:
+            lines.append(f"⚡ **Ventaja detectada:** +{prob_diff:.1f}% a tu favor")
+    
+    if candidate.get('value', 0) > 0:
+        lines.append(f"💎 **Valor:** {candidate['value']:.3f} (Ganancia esperada: {((candidate['value']-1)*100):.1f}%)")
+    
+    # Análisis detallado específico del mercado
+    lines.append("")
+    lines.append("🔍 **ANÁLISIS TÉCNICO DETALLADO:**")
+    
+    market_key = candidate.get('market_key', '')
+    if market_key == 'spreads' or 'hándicap' in candidate.get('market', '').lower():
+        lines.append("🎯 **Mercado Hándicap:**")
+        lines.append("• Línea mal calibrada por la casa de apuestas")
+        lines.append("• Estadísticas históricas favorecen esta selección")
+        lines.append("• Probabilidad real superior a la implícita")
+    elif market_key == 'h2h' or 'ganador' in candidate.get('market', '').lower():
+        lines.append("⚽ **Mercado Ganador:**")
+        lines.append("• Casa subestima probabilidades del favorito")
+        lines.append("• Análisis de forma reciente favorable")
+        lines.append("• Value bet confirmado por algoritmo avanzado")
+    elif market_key == 'totals' or 'total' in candidate.get('market', '').lower():
+        lines.append("📊 **Mercado Totales:**")
+        lines.append("• Línea de puntos mal establecida")
+        lines.append("• Estadísticas ofensivas/defensivas favorables")
+        lines.append("• Patrón histórico confirma tendencia")
+    
+    lines.append("")
+    lines.append("✅ **RECOMENDACIÓN PREMIUM:** APOSTAR CON CONFIANZA")
+    lines.append("🎯 **Nivel de confianza:** ALTO (Value bet confirmado)")
+    
+    # Análisis crítico de alineaciones para Premium usando sistema especializado
+    lines.append("")
+    lineup_analysis = get_lineup_section(candidate, is_premium=True)
+    lines.extend(lineup_analysis)
+    
+    # Optimización de cuotas mejorada para Premium
+    lines.append("")
+    lines.append("💰 **ESTRATEGIA DE OPTIMIZACIÓN:**")
+    lines.append("🔍 **Paso 1:** Verifica esta cuota en 3-5 casas diferentes")
+    lines.append("📈 **Paso 2:** Busca mejoras de 0.03-0.10 puntos")
+    lines.append("💎 **Paso 3:** Cada 0.05 de mejora = +5% más ganancia")
+    lines.append("🏆 **Objetivo:** Maximizar ROI en cada apuesta value")
+    lines.append("")
+    lines.append("🎯 **ESTRATEGIA CONSERVADORA (Mayor % Acierto):**")
+    lines.append("📊 **Opción A:** Busca cuotas más pequeñas del mismo pronóstico")
+    lines.append("🔧 **Opción B:** Ajusta líneas de hándicap más conservadoras")
+    lines.append("✅ **Opción C:** Acomoda la apuesta para menor riesgo")
+    lines.append("📈 **Resultado:** Menor ganancia pero mayor porcentaje de aciertos")
+    lines.append("🎲 **Balance:** Tú decides entre más ganancia vs más aciertos")
+    
+    if candidate.get('edge_percent', 0) > 0:
+        lines.append(f"🎯 **Ventaja:** +{candidate['edge_percent']:.1f}%")
+    
+    lines.append("")
+    
+    # Analytics avanzados (si existen)
+    if candidate.get('vig'):
+        lines.append("🔍 **INTELIGENCIA DE MERCADO:**")
+        lines.append(f"📈 **Vig:** {candidate.get('vig', 0):.2f}%")
+        
+        if candidate.get('efficiency', 0) > 0:
+            lines.append(f"⚙️ **Eficiencia:** {candidate['efficiency']:.2f}")
+        
+        if candidate.get('consensus_mean', 0) > 0:
+            consensus_diff = candidate.get('consensus_diff_pct', 0)
+            lines.append(f"🌐 **Media mercado:** {candidate['consensus_mean']:.2f}")
+            lines.append(f"📊 **Diferencia:** {consensus_diff:+.1f}%")
+        
+        if candidate.get('moved'):
+            lines.append(f"📈 **Movimiento:** {candidate.get('movement_direction', 'N/A')}")
+        
+        lines.append("")
+    
+    # Recomendación de stake
+    lines.append("💰 **GESTIÓN DE BANKROLL:**")
+    lines.append(f"💵 **Bankroll actual:** ${user.get('bankroll', getattr(user, 'bankroll', 1000)):.2f}")
+    lines.append(f"🎯 **Stake recomendado:** ${stake:.2f}")
+    lines.append(f"📊 **Porcentaje:** {(stake/user.get('bankroll', getattr(user, 'bankroll', 1000)))*100:.1f}%")
+    
+    # Score final
+    if candidate.get('final_score', 0) > 0:
+        lines.append("")
+        lines.append(f"⭐ **SCORE ALGORITMO:** {candidate['final_score']:.2f}/5.0")
+        if candidate['final_score'] >= 4.0:
+            lines.append("🔥 **CALIFICACIÓN:** EXCELENTE - Alta probabilidad de éxito")
+        elif candidate['final_score'] >= 3.0:
+            lines.append("✅ **CALIFICACIÓN:** BUENA - Apuesta recomendada")
+        else:
+            lines.append("⚠️ **CALIFICACIÓN:** MODERADA - Apostar con cautela")
+    
+    lines.append("")
+    lines.append("🎯 **¡Buena suerte y que las probabilidades estén a tu favor!**")
+    lines.append("")
+    lines.append("💡 **RECUERDA:** Busca mejores cuotas en otras casas para maximizar ganancias")
+    lines.append("🔧 **CONSEJO:** Ajusta a cuotas más conservadoras si prefieres mayor % de aciertos")
+    
+    return "\n".join(lines)
+
+
+def format_limits_reached_message(user) -> str:
+    """
+    Mensaje cuando el usuario alcanza su límite diario.
+    """
+    lines = []
+    lines.append("⏸️ **LÍMITE DIARIO ALCANZADO**")
+    lines.append("")
+    
+    if user.is_premium_active():
+        lines.append("Has recibido todas las alertas premium de hoy.")
+        lines.append("Mañana recibirás nuevas oportunidades.")
+    else:
+        lines.append("⏸️  Has alcanzado tu límite de 1 alerta diaria.")
+        lines.append("")
+        lines.append("🌟 UPGRADE A PREMIUM para recibir ALERTAS ILIMITADAS con:")
+        lines.append("• 📊 Análisis completo de valor")
+        lines.append("• 💰 Stakes calculados profesionalmente")
+        lines.append("• 📈 ROI tracking automatizado")
+        lines.append("• 🎯 Alertas en tiempo real")
+        lines.append("")
+        lines.append("💬 Contacta para más información")
+    
+    return "\n".join(lines)
+
+
+def format_stats_message(user) -> str:
+    """
+    Formato de estadísticas del usuario.
+    """
+    lines = []
+    lines.append("📊 **ESTADÍSTICAS PERSONALES**")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append("")
+    
+    # Estado de cuenta
+    if user.is_premium_active():
+        lines.append("💎 **USUARIO PREMIUM**")
+        if user.suscripcion_fin:
+            lines.append(f"⏰ **Expira:** {user.suscripcion_fin}")
+        lines.append("✨ Alertas ILIMITADAS")
+    else:
+        lines.append("🆓 **Usuario Gratuito**")
+        lines.append("• 1 alerta diaria")
+        lines.append("• Análisis básico")
+    
+    lines.append("")
+    lines.append(f"📬 Alertas restantes hoy: {max(0, user.get_remaining_alerts())}/{user.get_max_alerts()}")
+    
+    # Stats premium
+    if user.is_premium_active():
+        lines.append(f"💰 Bankroll actual: ${user.get('bankroll', getattr(user, 'bankroll', 1000)):.2f}")
+        lines.append(f"📈 ROI acumulado: {user.roi:.2f}%")
+        lines.append(f"🎯 Apuestas ganadas: {user.bets_won}/{user.bets_placed}")
+        if user.bets_placed > 0:
+            win_rate = (user.bets_won / user.bets_placed) * 100
+            lines.append(f"📊 Tasa de acierto: {win_rate:.1f}%")
+    
+    return "\n".join(lines)

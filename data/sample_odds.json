@@ -1,0 +1,135 @@
+[
+  {
+    "id": "soccer_match_001",
+    "sport_key": "soccer_epl",
+    "sport_title": "EPL",
+    "commence_time": "2025-11-20T15:00:00Z",
+    "home_team": "Manchester United",
+    "away_team": "Liverpool",
+    "bookmakers": [
+      {
+        "key": "bet365",
+        "title": "Bet365",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {"name": "Manchester United", "price": 2.10},
+              {"name": "Draw", "price": 3.40},
+              {"name": "Liverpool", "price": 1.85}
+            ]
+          }
+        ]
+      },
+      {
+        "key": "pinnacle",
+        "title": "Pinnacle",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {"name": "Manchester United", "price": 2.15},
+              {"name": "Draw", "price": 3.50},
+              {"name": "Liverpool", "price": 1.80}
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "basketball_nba_001",
+    "sport_key": "basketball_nba",
+    "sport_title": "NBA",
+    "commence_time": "2025-11-18T01:00:00Z",
+    "home_team": "Los Angeles Lakers",
+    "away_team": "Boston Celtics",
+    "bookmakers": [
+      {
+        "key": "draftkings",
+        "title": "DraftKings",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {"name": "Los Angeles Lakers", "price": 1.95},
+              {"name": "Boston Celtics", "price": 1.90}
+            ]
+          }
+        ]
+      },
+      {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {"name": "Los Angeles Lakers", "price": 2.00},
+              {"name": "Boston Celtics", "price": 1.85}
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "baseball_mlb_001",
+    "sport_key": "baseball_mlb",
+    "sport_title": "MLB",
+    "commence_time": "2025-11-18T19:00:00Z",
+    "home_team": "New York Yankees",
+    "away_team": "Boston Red Sox",
+    "bookmakers": [
+      {
+        "key": "bet365",
+        "title": "Bet365",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {"name": "New York Yankees", "price": 1.75},
+              {"name": "Boston Red Sox", "price": 2.20}
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "tennis_atp_001",
+    "sport_key": "tennis_atp",
+    "sport_title": "ATP",
+    "commence_time": "2025-11-19T10:00:00Z",
+    "home_team": "Novak Djokovic",
+    "away_team": "Carlos Alcaraz",
+    "bookmakers": [
+      {
+        "key": "pinnacle",
+        "title": "Pinnacle",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {"name": "Novak Djokovic", "price": 2.30},
+              {"name": "Carlos Alcaraz", "price": 1.65}
+            ]
+          }
+        ]
+      },
+      {
+        "key": "bet365",
+        "title": "Bet365",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {"name": "Novak Djokovic", "price": 2.40},
+              {"name": "Carlos Alcaraz", "price": 1.60}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
