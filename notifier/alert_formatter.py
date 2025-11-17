@@ -233,9 +233,10 @@ def format_premium_alert(candidate: Dict, user, stake: float) -> str:
     
     # Recomendación de stake
     lines.append("💰 **GESTIÓN DE BANKROLL:**")
-    lines.append(f"💵 **Bankroll actual:** ${user.get('bankroll', getattr(user, 'bankroll', 1000)):.2f}")
+    lines.append(f"💵 **Bankroll actual:** ${getattr(user, 'bankroll', 1000):.2f}")
     lines.append(f"🎯 **Stake recomendado:** ${stake:.2f}")
-    lines.append(f"📊 **Porcentaje:** {(stake/user.get('bankroll', getattr(user, 'bankroll', 1000)))*100:.1f}%")
+    bankroll = getattr(user, 'bankroll', 1000)
+    lines.append(f"📊 **Porcentaje:** {(stake/bankroll)*100:.1f}%")
     
     # Score final
     if candidate.get('final_score', 0) > 0:
@@ -307,7 +308,7 @@ def format_stats_message(user) -> str:
     
     # Stats premium
     if user.is_premium_active():
-        lines.append(f"💰 Bankroll actual: ${user.get('bankroll', getattr(user, 'bankroll', 1000)):.2f}")
+        lines.append(f"💰 Bankroll actual: ${getattr(user, 'bankroll', 1000):.2f}")
         lines.append(f"📈 ROI acumulado: {user.roi:.2f}%")
         lines.append(f"🎯 Apuestas ganadas: {user.bets_won}/{user.bets_placed}")
         if user.bets_placed > 0:
