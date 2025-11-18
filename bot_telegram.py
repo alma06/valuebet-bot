@@ -27,6 +27,7 @@ load_dotenv(env_path)
 from referrals import ReferralSystem, format_referral_stats
 from data.users import UsersManager
 from payments import PremiumPaymentProcessor
+from analytics.performance_tracker import performance_tracker
 
 # Configurar logging
 logging.basicConfig(
@@ -199,11 +200,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text += (
         "*COMANDOS DISPONIBLES:*\n"
         "/referidos - Ver tus estadisticas\n"
+        "/estadisticas - Ver rendimiento del bot\n"
         "/canjear - Canjear semana gratis\n"
         "/retirar [monto] - Solicitar retiro\n"
         "/premium - Info de suscripcion Premium\n"
     )
-    
+
     # Botones
     keyboard = [
         [
@@ -211,7 +213,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("⭐ Premium", callback_data="info_premium")
         ],
         [
-            InlineKeyboardButton("🔗 Compartir mi enlace", url=referral_link)
+            InlineKeyboardButton("📈 Estadísticas Bot", callback_data="ver_estadisticas"),
+            InlineKeyboardButton("🔗 Compartir enlace", url=referral_link)
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -416,6 +419,62 @@ async def cmd_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_estadisticas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Comando /estadisticas
+    Muestra estadísticas globales del bot
+    """
+    try:
+        # Obtener estadísticas globales
+        stats = performance_tracker.get_global_stats(days=30)
+        
+        # Formatear mensaje
+        stats_text = (
+            "📊 *ESTADÍSTICAS DEL BOT* (Últimos 30 días)\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📈 *RENDIMIENTO GLOBAL:*\n"
+            f"  Total pronósticos: {stats['total_predictions']}\n"
+            f"  ✅ Aciertos: {stats['won']}\n"
+            f"  ❌ Fallos: {stats['lost']}\n"
+            f"  ⏳ Pendientes: {stats['pending']}\n\n"
+            f"🎯 *EFECTIVIDAD:*\n"
+            f"  Win Rate: {stats['win_rate']}%\n"
+            f"  ROI: {stats['roi']:+.1f}%\n\n"
+            f"💰 *FINANCIERO:*\n"
+            f"  Stake total: ${stats['total_stake']:.2f}\n"
+            f"  Ganancia/Pérdida: ${stats['total_profit']:+.2f}\n\n"
+            f"📊 *ANÁLISIS:*\n"
+            f"  Cuota promedio: {stats['avg_odd']:.2f}\n"
+            f"  Mejor deporte: {stats['best_sport']}\n\n"
+        )
+        
+        # Agregar interpretación
+        if stats['win_rate'] >= 55:
+            stats_text += "✅ *Rendimiento EXCELENTE* - Por encima del umbral de rentabilidad\n"
+        elif stats['win_rate'] >= 50:
+            stats_text += "📊 *Rendimiento BUENO* - En zona de rentabilidad\n"
+        else:
+            stats_text += "⚠️ *Rendimiento en desarrollo* - Se optimiza continuamente\n"
+        
+        stats_text += "\n💡 *Nota:* Los resultados se verifican automáticamente tras finalizar cada evento."
+        
+        # Botón para actualizar
+        keyboard = [[InlineKeyboardButton("🔄 Actualizar", callback_data="ver_estadisticas")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            stats_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error en cmd_estadisticas: {e}")
+        await update.message.reply_text(
+            "❌ Error al cargar estadísticas. Intenta de nuevo más tarde."
+        )
+
+
 # ============================================================================
 # COMANDOS DE ADMINISTRADOR
 # ============================================================================
@@ -607,6 +666,47 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode='Markdown'
         )
 
+    elif data == "ver_estadisticas":
+        # Mostrar estadísticas globales
+        try:
+            stats = performance_tracker.get_global_stats(days=30)
+            
+            stats_text = (
+                "📊 *ESTADÍSTICAS DEL BOT* (Últimos 30 días)\n"
+                "━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"📈 *RENDIMIENTO GLOBAL:*\n"
+                f"  Total pronósticos: {stats['total_predictions']}\n"
+                f"  ✅ Aciertos: {stats['won']}\n"
+                f"  ❌ Fallos: {stats['lost']}\n"
+                f"  ⏳ Pendientes: {stats['pending']}\n\n"
+                f"🎯 *EFECTIVIDAD:*\n"
+                f"  Win Rate: {stats['win_rate']}%\n"
+                f"  ROI: {stats['roi']:+.1f}%\n\n"
+                f"💰 *FINANCIERO:*\n"
+                f"  Stake total: ${stats['total_stake']:.2f}\n"
+                f"  Ganancia/Pérdida: ${stats['total_profit']:+.2f}\n\n"
+                f"📊 *ANÁLISIS:*\n"
+                f"  Cuota promedio: {stats['avg_odd']:.2f}\n"
+                f"  Mejor deporte: {stats['best_sport']}\n\n"
+            )
+            
+            if stats['win_rate'] >= 55:
+                stats_text += "✅ *Rendimiento EXCELENTE*\n"
+            elif stats['win_rate'] >= 50:
+                stats_text += "📊 *Rendimiento BUENO*\n"
+            else:
+                stats_text += "⚠️ *Optimizando modelo*\n"
+            
+            stats_text += "\n💡 Resultados verificados automáticamente"
+            
+            await query.edit_message_text(stats_text, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error mostrando estadísticas: {e}")
+            await query.edit_message_text(
+                "❌ Error al cargar estadísticas. Intenta de nuevo."
+            )
+
 
 # ============================================================================
 # FUNCIONES DE NOTIFICACION
@@ -680,6 +780,7 @@ def main():
     application.add_handler(CommandHandler("canjear", cmd_canjear))
     application.add_handler(CommandHandler("retirar", cmd_retirar))
     application.add_handler(CommandHandler("premium", cmd_premium))
+    application.add_handler(CommandHandler("estadisticas", cmd_estadisticas))
     application.add_handler(CommandHandler("stats", stats_command))
     
     # Registrar comandos de admin
