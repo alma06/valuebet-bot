@@ -51,7 +51,7 @@ class PerformanceTracker:
             # Consultar todas las predicciones
             response = self.db.supabase.table('predictions') \
                 .select('*') \
-                .gte('created_at', cutoff_str) \
+                .gte('predicted_at', cutoff_str) \
                 .execute()
 
             predictions = response.data
@@ -61,9 +61,9 @@ class PerformanceTracker:
 
             # Calcular estadísticas
             total = len(predictions)
-            won = sum(1 for p in predictions if p.get('result') == 'won')
-            lost = sum(1 for p in predictions if p.get('result') == 'lost')
-            pending = sum(1 for p in predictions if p.get('result') in [None, 'pending'])
+            won = sum(1 for p in predictions if p.get('was_correct') == True)
+            lost = sum(1 for p in predictions if p.get('was_correct') == False)
+            pending = sum(1 for p in predictions if p.get('was_correct') is None)
 
             # Win rate
             settled = won + lost
@@ -74,16 +74,12 @@ class PerformanceTracker:
             total_profit = 0
             
             for p in predictions:
-                if p.get('result') in ['won', 'lost']:
+                if p.get('was_correct') is not None:  # Solo contar verificados
                     stake = float(p.get('stake', 20))
-                    odd = float(p.get('odds', 1.0))
+                    profit_loss = float(p.get('profit_loss', 0))
                     
                     total_stake += stake
-                    
-                    if p.get('result') == 'won':
-                        total_profit += (stake * odd) - stake
-                    else:
-                        total_profit -= stake
+                    total_profit += profit_loss
 
             roi = (total_profit / total_stake * 100) if total_stake > 0 else 0
 
@@ -98,7 +94,7 @@ class PerformanceTracker:
                     sports_stats[sport] = {'won': 0, 'total': 0}
                 
                 sports_stats[sport]['total'] += 1
-                if p.get('result') == 'won':
+                if p.get('was_correct') == True:
                     sports_stats[sport]['won'] += 1
 
             best_sport = 'N/A'
@@ -141,8 +137,8 @@ class PerformanceTracker:
         try:
             response = self.db.supabase.table('predictions') \
                 .select('*') \
-                .not_.is_('result', 'null') \
-                .order('event_start_time', desc=True) \
+                .not_.is_('was_correct', 'null') \
+                .order('predicted_at', desc=True) \
                 .limit(limit) \
                 .execute()
 
@@ -184,17 +180,18 @@ class PerformanceTracker:
 
                 sports[sport]['total'] += 1
                 
-                if p.get('result') == 'won':
+                if p.get('was_correct') == True:
                     sports[sport]['won'] += 1
                     stake = float(p.get('stake', 20))
-                    odd = float(p.get('odds', 1.0))
+                    profit = float(p.get('profit_loss', 0))
                     sports[sport]['stake'] += stake
-                    sports[sport]['profit'] += (stake * odd) - stake
-                elif p.get('result') == 'lost':
+                    sports[sport]['profit'] += profit
+                elif p.get('was_correct') == False:
                     sports[sport]['lost'] += 1
                     stake = float(p.get('stake', 20))
+                    profit = float(p.get('profit_loss', 0))
                     sports[sport]['stake'] += stake
-                    sports[sport]['profit'] -= stake
+                    sports[sport]['profit'] += profit
 
             # Calcular win_rate y ROI
             for sport, stats in sports.items():
