@@ -31,54 +31,71 @@ def format_free_alert(candidate: Dict) -> str:
     lines.append("")
     
     # Información detallada del mercado con formato claro
+    market = candidate.get('market', 'N/A')
     market_key = candidate.get('market_key', '')
     selection = candidate['selection']
     odd = candidate['odds']
     bookmaker = candidate.get('bookmaker', 'N/A')
     point = candidate.get('point')
 
+    # Detectar tipo de mercado si no viene market_key
+    if not market_key:
+        if 'spread' in market.lower() or 'handicap' in market.lower() or 'hándicap' in market.lower():
+            market_key = 'spreads'
+        elif 'total' in market.lower() or 'over' in selection.lower() or 'under' in selection.lower():
+            market_key = 'totals'
+        else:
+            market_key = 'h2h'
+
     # Formatear según el tipo de mercado DE FORMA CLARA
     lines.append("📋 **APUESTA:**")
-    
+    lines.append(f"   🏆 **Partido:** {candidate.get('event', 'N/A')}")
+    lines.append("")
+
     if market_key == 'h2h':
         # Ganador directo
-        lines.append(f"   ⚽ **Ganador:** {selection}")
+        lines.append(f"   ⚽ **Tipo:** GANADOR DEL PARTIDO")
+        lines.append(f"   🎯 **Apuesta:** {selection}")
         lines.append(f"   💰 **Cuota:** {odd:.2f}")
-        
+
     elif market_key == 'spreads':
         # Hándicap
+        lines.append(f"   🎯 **Tipo:** HÁNDICAP")
+        lines.append(f"   ⚽ **Equipo:** {selection}")
         if point is not None:
-            lines.append(f"   🎯 **Equipo:** {selection}")
-            lines.append(f"   📊 **Hándicap:** {point:+.1f} puntos")
+            lines.append(f"   📊 **Línea:** {point:+.1f} puntos")
             lines.append(f"   💰 **Cuota:** {odd:.2f}")
+            lines.append("")
             if point > 0:
-                lines.append(f"   ℹ️ {selection} puede perder hasta {abs(point)} pts")
+                lines.append(f"   ℹ️ **Significa:** {selection} puede PERDER hasta {abs(point)} puntos y GANAS")
             else:
-                lines.append(f"   ℹ️ {selection} debe ganar por más de {abs(point)} pts")
+                lines.append(f"   ℹ️ **Significa:** {selection} debe GANAR por MÁS de {abs(point)} puntos")
         else:
-            lines.append(f"   🎯 **Hándicap:** {selection}")
             lines.append(f"   💰 **Cuota:** {odd:.2f}")
-            
+
     elif market_key == 'totals':
         # Totales (Over/Under)
+        over_under = "OVER" if "over" in selection.lower() else "UNDER"
+        lines.append(f"   📊 **Tipo:** TOTAL DE PUNTOS")
         if point is not None:
-            over_under = "OVER" if "over" in selection.lower() else "UNDER"
-            lines.append(f"   📊 **Total:** {over_under} {point} puntos")
+            lines.append(f"   🎯 **Apuesta:** {over_under} {point} puntos")
             lines.append(f"   💰 **Cuota:** {odd:.2f}")
+            lines.append("")
             if over_under == "OVER":
-                lines.append(f"   ℹ️ Marcador TOTAL debe ser MAYOR a {point} puntos")
+                lines.append(f"   ℹ️ **Significa:** Marcador TOTAL debe ser MAYOR a {point} puntos")
             else:
-                lines.append(f"   ℹ️ Marcador TOTAL debe ser MENOR a {point} puntos")
+                lines.append(f"   ℹ️ **Significa:** Marcador TOTAL debe ser MENOR a {point} puntos")
         else:
-            lines.append(f"   📊 **Total:** {selection}")
+            lines.append(f"   🎯 **Apuesta:** {selection}")
             lines.append(f"   💰 **Cuota:** {odd:.2f}")
     else:
         # Otro mercado
-        lines.append(f"   📊 **Mercado:** {candidate.get('market', 'N/A')}")
-        lines.append(f"   ✅ **Selección:** {selection}")
+        lines.append(f"   📊 **Tipo:** {market}")
+        lines.append(f"   🎯 **Apuesta:** {selection}")
         lines.append(f"   💰 **Cuota:** {odd:.2f}")
-    
-    lines.append(f"\n🏠 **Casa de apuestas:** {bookmaker}")    # Información de valor básica
+
+    lines.append("")
+    lines.append(f"🏠 **Casa de apuestas:** {bookmaker}")# Información de valor básica
     if candidate.get('value', 0) > 0:
         lines.append(f"💎 **VALOR:** {candidate['value']:.3f}")
     
@@ -158,48 +175,62 @@ def format_premium_alert(candidate: Dict, user, stake: float) -> str:
     
     # Información detallada del evento
     sport_es = translate_sport(candidate.get('sport_key', ''), candidate.get('sport'))
+    market = candidate.get('market', 'N/A')
     market_key = candidate.get('market_key', '')
     selection = candidate['selection']
     odd = candidate['odds']
     bookmaker = candidate.get('bookmaker', 'N/A')
     point = candidate.get('point')
-    
+
+    # Detectar tipo de mercado si no viene market_key
+    if not market_key:
+        if 'spread' in market.lower() or 'handicap' in market.lower() or 'hándicap' in market.lower():
+            market_key = 'spreads'
+        elif 'total' in market.lower() or 'over' in selection.lower() or 'under' in selection.lower():
+            market_key = 'totals'
+        else:
+            market_key = 'h2h'
+
     lines.append(f"🎯 **{sport_es.upper()}**")
     lines.append(f"⚽ **{candidate.get('event', 'N/A')}**")
     lines.append("")
     lines.append("📋 **APUESTA RECOMENDADA:**")
-    
+
     if market_key == 'h2h':
         # Ganador directo
-        lines.append(f"   ⚽ **Ganador:** {selection}")
+        lines.append(f"   ⚽ **Tipo:** GANADOR DEL PARTIDO")
+        lines.append(f"   🎯 **Apuesta:** {selection}")
         lines.append(f"   💰 **Cuota:** {odd:.2f}")
-        
+
     elif market_key == 'spreads':
         # Hándicap
+        lines.append(f"   🎯 **Tipo:** HÁNDICAP")
+        lines.append(f"   ⚽ **Equipo:** {selection}")
         if point is not None:
-            lines.append(f"   🎯 **Equipo:** {selection}")
-            lines.append(f"   📊 **Hándicap:** {point:+.1f} puntos")
+            lines.append(f"   📊 **Línea:** {point:+.1f} puntos")
             lines.append(f"   💰 **Cuota:** {odd:.2f}")
+            lines.append("")
             if point > 0:
-                lines.append(f"   ℹ️ {selection} puede perder hasta {abs(point)} pts y ganas")
+                lines.append(f"   ℹ️ **Significa:** {selection} puede PERDER hasta {abs(point)} puntos y GANAS")
             else:
-                lines.append(f"   ℹ️ {selection} debe ganar por MÁS de {abs(point)} pts")
+                lines.append(f"   ℹ️ **Significa:** {selection} debe GANAR por MÁS de {abs(point)} puntos")
         else:
-            lines.append(f"   🎯 **Hándicap:** {selection}")
             lines.append(f"   💰 **Cuota:** {odd:.2f}")
-            
+
     elif market_key == 'totals':
         # Totales (Over/Under)
+        over_under = "OVER" if "over" in selection.lower() else "UNDER"
+        lines.append(f"   📊 **Tipo:** TOTAL DE PUNTOS")
         if point is not None:
-            over_under = "OVER" if "over" in selection.lower() else "UNDER"
-            lines.append(f"   📊 **Total:** {over_under} {point} puntos")
+            lines.append(f"   🎯 **Apuesta:** {over_under} {point} puntos")
             lines.append(f"   💰 **Cuota:** {odd:.2f}")
+            lines.append("")
             if over_under == "OVER":
-                lines.append(f"   ℹ️ Marcador TOTAL debe ser MAYOR a {point} puntos")
+                lines.append(f"   ℹ️ **Significa:** Marcador TOTAL debe ser MAYOR a {point} puntos")
             else:
-                lines.append(f"   ℹ️ Marcador TOTAL debe ser MENOR a {point} puntos")
+                lines.append(f"   ℹ️ **Significa:** Marcador TOTAL debe ser MENOR a {point} puntos")
         else:
-            lines.append(f"   📊 **Total:** {selection}")
+            lines.append(f"   🎯 **Apuesta:** {selection}")
             lines.append(f"   💰 **Cuota:** {odd:.2f}")
     else:
         # Otro mercado
