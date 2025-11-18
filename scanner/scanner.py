@@ -172,21 +172,34 @@ class ValueScanner:
                                 except:
                                     commence_time_str = commence_str
                             
+                            # Construir nombre del evento
+                            event_name = "N/A"
+                            if home and away:
+                                event_name = f"{home} vs {away}"
+                            
+                            # Extraer punto/línea para handicaps y totals
+                            point_value = out.get('point')
+
                             results.append({
                                 'id': ev.get('id'),
                                 'sport': ev.get('sport_nice', sport_key),
                                 'sport_key': sport_key,
                                 'home': home,
                                 'away': away,
+                                'event': event_name,
                                 'commence_time': commence_time_str,
                                 'market': market_key,
+                                'market_key': market_key,
                                 'selection': sel,
                                 'odds': odd,
                                 'prob': prob_est,
+                                'real_probability': prob_est,
                                 'value': value,
                                 'book': bm.get('title'),
+                                'bookmaker': bm.get('title'),
                                 'url': bm.get('url',''),
                                 'analysis': analysis,
+                                'point': point_value,
                             })
         # De-duplicate by id+selection keeping highest
         unique = {}
