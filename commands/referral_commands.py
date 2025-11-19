@@ -300,7 +300,7 @@ class ReferralCommands:
             # Mostrar opciones de Premium
             await query.edit_message_text(
                 "SUSCRIPCION PREMIUM\n\n"
-                "Precio: $50 USD por semana\n\n"
+                "Precio: 15€ por semana\n\n"
                 "Incluye:\n"
                 "- Hasta 5 alertas diarias de máxima calidad\n"
                 "- Análisis profesional con Kelly Criterion\n"

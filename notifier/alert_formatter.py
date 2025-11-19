@@ -36,6 +36,30 @@ def format_free_alert(candidate: Dict) -> str:
     selection = candidate['selection']
     odd = candidate['odds']
     bookmaker = candidate.get('bookmaker', 'N/A')
+    # Buscar cuota de Bet365 para la misma línea, mercado y selección
+    event_bookmakers = candidate.get('event_bookmakers') or candidate.get('bookmakers')
+    bet365_odd = None
+    if event_bookmakers:
+        for bm in event_bookmakers:
+            if bm.get('title','').lower() == 'bet365':
+                for m in bm.get('markets', []):
+                    if m.get('key') == candidate.get('market_key'):
+                        for out in m.get('outcomes', []):
+                            # Comparar selección y punto (línea) si aplica
+                            same_sel = out.get('name','').strip().lower() == candidate['selection'].strip().lower()
+                            same_point = True
+                            if 'point' in candidate and candidate['point'] is not None:
+                                same_point = abs(float(out.get('point',0))-float(candidate['point'])) < 1e-6
+                            if same_sel and same_point:
+                                bet365_odd = float(out.get('price'))
+                                break
+                    if bet365_odd is not None:
+                        break
+            if bet365_odd is not None:
+                break
+    if bet365_odd is not None:
+        odd = bet365_odd
+        bookmaker = 'Bet365'
     point = candidate.get('point')
 
     # Detectar tipo de mercado si no viene market_key
@@ -94,10 +118,33 @@ def format_free_alert(candidate: Dict) -> str:
         lines.append(f"   🎯 **Apuesta:** {selection}")
         lines.append(f"   💰 **Cuota:** {odd:.2f}")
 
+
     lines.append("")
-    lines.append(f"🏠 **Casa de apuestas:** {bookmaker}")# Información de valor básica
-    if candidate.get('value', 0) > 0:
-        lines.append(f"💎 **VALOR:** {candidate['value']:.3f}")
+    lines.append(f"🏠 **Casa de apuestas:** {bookmaker}")
+
+    # --- PICK EXPLICADO ---
+    lines.append("")
+    lines.append("📝 **PICK EXPLICADO:**")
+    # Cuota
+    lines.append(f"• Cuota: {odd:.2f}")
+    # Probabilidad real
+    real_prob = candidate.get('real_probability')
+    if real_prob is not None:
+        lines.append(f"• Probabilidad real: {real_prob*100:.1f}%")
+    # Valor esperado (EV)
+    value = candidate.get('value')
+    if value is not None:
+        ev = (value-1)*100
+        lines.append(f"• Valor esperado (EV): {ev:.1f}%")
+    # Racha del equipo
+    streak = candidate.get('streak')
+    if streak:
+        lines.append(f"• Racha del equipo: {streak}")
+    lines.append("")
+
+    # Información de valor básica
+    if value is not None and value > 0:
+        lines.append(f"💎 **VALOR:** {value:.3f}")
     
     if candidate.get('edge_percent', 0) > 0:
         lines.append(f"🎯 **VENTAJA:** +{candidate['edge_percent']:.1f}%")
@@ -182,6 +229,30 @@ def format_premium_alert(candidate: Dict, user, stake: float) -> str:
     selection = candidate['selection']
     odd = candidate['odds']
     bookmaker = candidate.get('bookmaker', 'N/A')
+    # Buscar cuota de Bet365 para la misma línea, mercado y selección
+    event_bookmakers = candidate.get('event_bookmakers') or candidate.get('bookmakers')
+    bet365_odd = None
+    if event_bookmakers:
+        for bm in event_bookmakers:
+            if bm.get('title','').lower() == 'bet365':
+                for m in bm.get('markets', []):
+                    if m.get('key') == candidate.get('market_key'):
+                        for out in m.get('outcomes', []):
+                            # Comparar selección y punto (línea) si aplica
+                            same_sel = out.get('name','').strip().lower() == candidate['selection'].strip().lower()
+                            same_point = True
+                            if 'point' in candidate and candidate['point'] is not None:
+                                same_point = abs(float(out.get('point',0))-float(candidate['point'])) < 1e-6
+                            if same_sel and same_point:
+                                bet365_odd = float(out.get('price'))
+                                break
+                    if bet365_odd is not None:
+                        break
+            if bet365_odd is not None:
+                break
+    if bet365_odd is not None:
+        odd = bet365_odd
+        bookmaker = 'Bet365'
     point = candidate.get('point')
 
     # Detectar tipo de mercado si no viene market_key
@@ -240,7 +311,28 @@ def format_premium_alert(candidate: Dict, user, stake: float) -> str:
         lines.append(f"   ✅ **Selección:** {selection}")
         lines.append(f"   💰 **Cuota:** {odd:.2f}")
 
+
     lines.append(f"\n🏠 **Casa de apuestas:** {bookmaker}")
+
+    # --- PICK EXPLICADO ---
+    lines.append("")
+    lines.append("📝 **PICK EXPLICADO:**")
+    # Cuota
+    lines.append(f"• Cuota: {odd:.2f}")
+    # Probabilidad real
+    real_prob = candidate.get('real_probability')
+    if real_prob is not None:
+        lines.append(f"• Probabilidad real: {real_prob*100:.1f}%")
+    # Valor esperado (EV)
+    value = candidate.get('value')
+    if value is not None:
+        ev = (value-1)*100
+        lines.append(f"• Valor esperado (EV): {ev:.1f}%")
+    # Racha del equipo
+    streak = candidate.get('streak')
+    if streak:
+        lines.append(f"• Racha del equipo: {streak}")
+    lines.append("")
 
     if candidate.get('commence_time'):
         lines.append(f"⏰ **INICIO:** {candidate['commence_time']}")
@@ -409,11 +501,19 @@ def format_stats_message(user) -> str:
     
     # Stats premium
     if user.is_premium_active():
+        # Bank dinámico semanal
+        user.reset_dynamic_bank_if_needed()
+        lines.append(f"💶 Bank dinámico semanal: {getattr(user, 'dynamic_bank', 200.0):.2f} €")
+        lines.append(f"💸 Stake fijo por pronóstico: 10.00 €")
+        # Bankroll real
         lines.append(f"💰 Bankroll actual: ${getattr(user, 'bankroll', 1000):.2f}")
-        lines.append(f"📈 ROI acumulado: {user.roi:.2f}%")
-        lines.append(f"🎯 Apuestas ganadas: {user.bets_won}/{user.bets_placed}")
-        if user.bets_placed > 0:
-            win_rate = (user.bets_won / user.bets_placed) * 100
-            lines.append(f"📊 Tasa de acierto: {win_rate:.1f}%")
+        # ROI y aciertos (si existen)
+        if hasattr(user, 'roi'):
+            lines.append(f"📈 ROI acumulado: {user.roi:.2f}%")
+        if hasattr(user, 'bets_won') and hasattr(user, 'bets_placed'):
+            lines.append(f"🎯 Apuestas ganadas: {user.bets_won}/{user.bets_placed}")
+            if user.bets_placed > 0:
+                win_rate = (user.bets_won / user.bets_placed) * 100
+                lines.append(f"📊 Tasa de acierto: {win_rate:.1f}%")
     
     return "\n".join(lines)

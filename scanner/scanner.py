@@ -71,62 +71,65 @@ class ValueScanner:
 
     def find_value_bets(self, events: List[Dict]) -> List[Dict]:
         results = []
-        discarded = {'odds_range': 0, 'probability': 0, 'time_range': 0, 'no_threshold': 0, 'total_checked': 0}
+        discarded = {'odds_range': 0, 'probability': 0, 'time_range': 0, 'no_threshold': 0, 'total_checked': 0, 'missing_fields': 0}
         now_utc = datetime.now(timezone.utc)
-        
         # Límite: 24 horas desde ahora
         max_time = now_utc + timedelta(hours=24)
-        
         for ev in events:
             # Filtrar partidos: solo en las próximas 24 horas
             commence_str = ev.get('commence_time')
             if commence_str:
                 try:
                     commence_time = datetime.fromisoformat(commence_str.replace('Z', '+00:00'))
-                    
                     if commence_time <= now_utc:
-                        # Partido ya comenzó o está en vivo
                         discarded['time_range'] += 1
                         continue
-                    
                     if commence_time > max_time:
-                        # Partido es en más de 24 horas
                         discarded['time_range'] += 1
                         continue
-                        
                 except Exception:
-                    pass  # Si no se puede parsear, continuar con el evento
-            
+                    logger.warning(f"[SCANNER] No se pudo parsear commence_time: {commence_str}")
+                    continue
+            else:
+                logger.warning(f"[SCANNER] Evento sin commence_time: {ev.get('id')}")
+                discarded['missing_fields'] += 1
+                continue
             sport_key = ev.get('sport_key', ev.get('_sport_key', ''))
             prefix = self.sport_prefix(sport_key)
             threshold = THRESHOLDS.get(prefix)
             if not threshold:
+                logger.warning(f"[SCANNER] Sin threshold para sport_key: {sport_key}")
+                discarded['no_threshold'] += 1
                 continue
             probs = estimate_probabilities(ev)
             # Incluir mercados: h2h, totals (over/under), spreads (hándicap)
             for bm in ev.get('bookmakers', []):
                 for m in bm.get('markets', []):
                     market_key = m.get('key')
-                    # Aceptar h2h, totals, spreads
                     if market_key not in ['h2h', 'totals', 'spreads']:
                         continue
-                    
                     for out in m.get('outcomes', []):
                         discarded['total_checked'] += 1
-                        sel = out.get('name')
-                        odd = float(out.get('price'))
+                        sel = out.get('name') or 'Sin nombre'
+                        if not sel or sel.strip() == '':
+                            logger.warning(f"[SCANNER] Outcome sin nombre en evento {ev.get('id')}")
+                            discarded['missing_fields'] += 1
+                            continue
+                        try:
+                            odd = float(out.get('price'))
+                        except Exception:
+                            logger.warning(f"[SCANNER] Outcome sin price válido en evento {ev.get('id')}")
+                            discarded['missing_fields'] += 1
+                            continue
                         if odd < self.min_odd or odd > self.max_odd:
                             discarded['odds_range'] += 1
                             continue
-                        
                         # Determinar probabilidad según el mercado
                         prob_est = None
-                        
+                        home = ev.get('home_team') or ev.get('home') or ev.get('competitor_home') or 'Equipo Local'
+                        away = ev.get('away_team') or ev.get('away') or ev.get('competitor_away') or 'Equipo Visitante'
+                        name_lower = sel.lower()
                         if market_key == 'h2h':
-                            # Mercado head-to-head (ganador)
-                            home = ev.get('home_team') or ev.get('home') or ev.get('competitor_home')
-                            away = ev.get('away_team') or ev.get('away') or ev.get('competitor_away')
-                            name_lower = sel.lower()
                             if 'draw' in name_lower or name_lower in ['x','empate']:
                                 prob_est = probs.get('draw')
                             elif (home and home.lower() in name_lower) or name_lower in ['home','local']:
@@ -134,52 +137,29 @@ class ValueScanner:
                             elif (away and away.lower() in name_lower) or name_lower in ['away','visitante']:
                                 prob_est = probs.get('away')
                             else:
-                                if 'home' in probs:
-                                    prob_est = probs.get('home')
-                                else:
-                                    prob_est = list(probs.values())[0]
-                        
+                                prob_est = probs.get('home') if 'home' in probs else list(probs.values())[0]
                         elif market_key == 'totals':
-                            # Totales: Over/Under - usar 50% como estimación base
-                            # (simplificación, idealmente analizar histórico de puntos)
                             prob_est = 0.52 if 'over' in sel.lower() else 0.48
-                        
                         elif market_key == 'spreads':
-                            # Hándicap: usar probabilidad home/away ajustada
-                            home = ev.get('home_team') or ev.get('home') or ev.get('competitor_home')
-                            name_lower = sel.lower()
                             if home and home.lower() in name_lower:
                                 prob_est = probs.get('home', 0.5)
                             else:
                                 prob_est = probs.get('away', 0.5)
-                        
                         if not prob_est or prob_est < self.min_prob:
                             discarded['probability'] += 1
                             continue
-                        
                         value = odd * prob_est
                         if value >= threshold:
-                            home = ev.get('home_team') or ev.get('home') or ev.get('competitor_home')
-                            away = ev.get('away_team') or ev.get('away') or ev.get('competitor_away')
                             analysis = generate_analysis(ev, sel, odd, prob_est)
-                            
                             # Formatear fecha y hora del evento
                             commence_time_str = ""
-                            if commence_str:
-                                try:
-                                    dt = datetime.fromisoformat(commence_str.replace('Z', '+00:00'))
-                                    commence_time_str = dt.strftime("%Y-%m-%d %H:%M UTC")
-                                except:
-                                    commence_time_str = commence_str
-                            
-                            # Construir nombre del evento
-                            event_name = "N/A"
-                            if home and away:
-                                event_name = f"{home} vs {away}"
-                            
-                            # Extraer punto/línea para handicaps y totals
+                            try:
+                                dt = datetime.fromisoformat(commence_str.replace('Z', '+00:00'))
+                                commence_time_str = dt.strftime("%Y-%m-%d %H:%M UTC")
+                            except:
+                                commence_time_str = commence_str or 'Sin fecha'
+                            event_name = f"{home} vs {away}"
                             point_value = out.get('point')
-
                             results.append({
                                 'id': ev.get('id'),
                                 'sport': ev.get('sport_nice', sport_key),
@@ -195,27 +175,26 @@ class ValueScanner:
                                 'prob': prob_est,
                                 'real_probability': prob_est,
                                 'value': value,
-                                'book': bm.get('title'),
-                                'bookmaker': bm.get('title'),
+                                'book': bm.get('title') or 'Desconocida',
+                                'bookmaker': bm.get('title') or 'Desconocida',
                                 'url': bm.get('url',''),
                                 'analysis': analysis,
                                 'point': point_value,
                             })
-        # De-duplicate by id+selection keeping highest
+        # De-duplicate by id+selection+bookmaker keeping highest value
         unique = {}
         for r in results:
-            key = (r['id'], r['selection'])
+            key = (r['id'], r['selection'], r['bookmaker'])
             if key not in unique or r['value'] > unique[key]['value']:
                 unique[key] = r
-        
         final_results = list(unique.values())
-        
-        # Logging detallado de descartes
+        # Logging detallado de descartes y advertencias
         logger.info(f"📊 Scan Summary:")
         logger.info(f"   Total outcomes checked: {discarded['total_checked']}")
         logger.info(f"   ❌ Discarded by odds range ({self.min_odd}-{self.max_odd}): {discarded['odds_range']}")
         logger.info(f"   ❌ Discarded by low probability (<{self.min_prob:.0%}): {discarded['probability']}")
         logger.info(f"   ❌ Discarded by time range: {discarded['time_range']}")
+        logger.info(f"   ❌ Discarded by missing fields: {discarded['missing_fields']}")
+        logger.info(f"   ❌ Discarded by no threshold: {discarded['no_threshold']}")
         logger.info(f"   ✅ Final candidates: {len(final_results)}")
-        
         return final_results

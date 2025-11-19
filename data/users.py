@@ -33,7 +33,7 @@ REFERRALS_FOR_PREMIUM_WEEK = int(os.getenv("REFERRALS_FOR_PREMIUM_WEEK", "5"))  
 PREMIUM_WEEK_DAYS = 7  # Duración de una semana premium
 
 # Configuración de comisiones (NUEVO SISTEMA)
-PREMIUM_PRICE_USD = float(os.getenv("PREMIUM_PRICE_USD", "50.0"))  # $50 semanales
+PREMIUM_PRICE_EUR = float(os.getenv("PREMIUM_PRICE_EUR", "15.0"))  # 15€ semanales
 COMMISSION_PERCENTAGE = float(os.getenv("COMMISSION_PERCENTAGE", "10.0"))  # 10% comisión
 PAID_REFERRALS_FOR_FREE_WEEK = int(os.getenv("PAID_REFERRALS_FOR_FREE_WEEK", "3"))  # 3 referidos pagos = 1 semana gratis
 
@@ -43,6 +43,24 @@ RESET_HOUR = 6  # 6 AM Eastern
 
 
 class User:
+        def get_dynamic_stake(self) -> float:
+            """Devuelve el stake fijo del 10% del bank dinámico (10€ por defecto)."""
+            return round(self.dynamic_bank * 0.10, 2)
+
+        def update_dynamic_bank(self, bet_result: Dict):
+            """Actualiza el bank dinámico tras el resultado de una apuesta con stake fijo."""
+            self.reset_dynamic_bank_if_needed()
+            stake = 10.0  # Siempre stake 10€
+            odd = bet_result.get('odd', 0)
+            won = bet_result.get('won', False)
+            if won:
+                profit = stake * (odd - 1)
+                self.dynamic_bank += profit
+            else:
+                self.dynamic_bank -= stake
+            # No permitir bank negativo
+            if self.dynamic_bank < 0:
+                self.dynamic_bank = 0.0
     """Representa un usuario del sistema."""
     
     def __init__(
@@ -71,6 +89,10 @@ class User:
         total_commission_earned: float = 0.0,
         free_weeks_earned: int = 0
     ):
+        # Bank dinámico semanal
+        dynamic_bank: float = 200.0,
+        dynamic_bank_last_reset: str = None
+    ):
         self.chat_id = chat_id
         self.nivel = nivel.lower()  # "gratis" o "premium"
         self.bankroll = bankroll
@@ -96,6 +118,23 @@ class User:
         self.suscripcion_fin = suscripcion_fin  # Fecha fin de suscripción ISO
         self.total_commission_earned = total_commission_earned  # Total ganado histórico
         self.free_weeks_earned = free_weeks_earned  # Semanas gratis por referidos pagos
+
+        # Bank dinámico semanal
+        self.dynamic_bank = dynamic_bank
+        self.dynamic_bank_last_reset = dynamic_bank_last_reset or self._get_current_date()
+            """Reinicia el bank dinámico a 200€ si es lunes y no se ha reiniciado hoy."""
+            from datetime import datetime
+            import pytz
+            today = datetime.now().date()
+            last_reset = None
+            try:
+                last_reset = datetime.fromisoformat(self.dynamic_bank_last_reset).date()
+            except Exception:
+                last_reset = today
+            # Lunes = 0
+            if today.weekday() == 0 and last_reset != today:
+                self.dynamic_bank = 200.0
+                self.dynamic_bank_last_reset = today.isoformat()
     
     def _get_current_date(self) -> str:
         """Obtiene la fecha actual en formato YYYY-MM-DD en timezone configurado."""
@@ -395,6 +434,9 @@ class User:
         # Mantener solo últimas 100 apuestas en history
         if len(self.bet_history) > 100:
             self.bet_history = self.bet_history[-100:]
+
+        # Actualizar bank dinámico también
+        self.update_dynamic_bank(bet_result)
     
     def get_stats(self) -> Dict:
         """Retorna estadísticas del usuario premium."""

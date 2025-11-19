@@ -8,7 +8,9 @@ Se ejecuta en paralelo con main.py para el monitoreo de value bets.
 import os
 import asyncio
 import logging
-from datetime import datetime, timezone
+import shutil
+import pytz
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -18,6 +20,8 @@ from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes
 )
+from telegram.error import TelegramError
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Cargar variables de entorno
 env_path = Path(__file__).parent / '.env'
@@ -41,10 +45,166 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 ADMIN_CHAT_ID = os.getenv('CHAT_ID', '5901833301')
 BOT_USERNAME = "Valueapuestasbot"
 
+# --- Protección y backup de archivos JSON críticos ---
+def safe_json_backup(path):
+    try:
+        if not Path(path).exists():
+            logger.warning(f"[STARTUP] Archivo {path} no existe. Se creará uno nuevo.")
+            Path(path).write_text('{}', encoding='utf-8')
+        # Backup automático
+        backup_path = Path(path).with_suffix(f".bak_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        shutil.copy2(path, backup_path)
+        logger.info(f"[STARTUP] Backup creado: {backup_path}")
+    except Exception as e:
+        logger.error(f"[STARTUP] Error al respaldar {path}: {e}")
+
+safe_json_backup("data/referrals.json")
+safe_json_backup("data/users.json")
+
 # Inicializar sistemas
 referral_system = ReferralSystem("data/referrals.json")
 users_manager = UsersManager("data/users.json")
 payment_processor = PremiumPaymentProcessor(referral_system, users_manager)
+
+# Variable global para la aplicación (se inicializa en main)
+application = None
+
+# ========== RECOMPENSA SEMANAL AUTOMÁTICA =============
+async def send_weekly_referral_rewards():
+    """
+    Calcula el top 3 de referidores premium de la semana y reparte el 50% de las comisiones variables generadas por el bot.
+    Envía mensaje a todos los usuarios y reinicia el ranking semanal.
+    """
+    # Calcular fecha de inicio de la semana
+    now = datetime.now(timezone.utc)
+    week_start = now - timedelta(days=now.weekday())
+    # Calcular comisiones variables generadas por el bot en la semana
+    # Suponemos que performance_tracker.get_global_stats(days=7) da profit neto del bot
+    stats = performance_tracker.get_global_stats(days=7)
+    total_profit = stats.get('total_profit', 0)
+    if total_profit <= 0:
+        message = "🏆 Ranking de referidos de la semana\n\nNo hubo ganancias para repartir esta semana. ¡Sigue invitando amigos!"
+    else:
+        pool = total_profit * 0.5
+        # Calcular top 3 referidores premium (por cantidad de referidos premium activos nuevos en la semana)
+        users = list(users_manager.users.values())
+        ranking = []
+        for user in users:
+            # Contar referidos premium activados en la semana
+            count = 0
+            for ref_id in getattr(user, 'referred_users', []):
+                ref = users_manager.users.get(ref_id)
+                if ref and ref.is_premium_active():
+                    # Si el referido activó premium esta semana
+                    if ref.premium_expires_at:
+                        try:
+                            dt = datetime.fromisoformat(ref.premium_expires_at)
+                            if dt >= week_start:
+                                count += 1
+                        except Exception:
+                            continue
+            ranking.append({'user_id': user.chat_id, 'username': getattr(user, 'username', user.chat_id), 'count': count})
+        ranking.sort(key=lambda x: x['count'], reverse=True)
+        premios = [0, 0, 0]
+        if len(ranking) > 0 and ranking[0]['count'] > 0:
+            premios[0] = round(pool * 0.5, 2)
+        if len(ranking) > 1 and ranking[1]['count'] > 0:
+            premios[1] = round(pool * 0.3, 2)
+        if len(ranking) > 2 and ranking[2]['count'] > 0:
+            premios[2] = round(pool * 0.2, 2)
+        message = "🏆 Ranking de referidos de la semana\n"
+        for i, r in enumerate(ranking[:3]):
+            if r['count'] > 0:
+                message += f"{i+1}º {r['username']} – {r['count']} referidos → {premios[i]} € premio\n"
+        message += "¡Sigue trayendo amigos y aumenta tu recompensa la próxima semana!"
+    # Enviar a todos los usuarios
+    all_users = users_manager.users.keys()
+    for user_id in all_users:
+        try:
+            await application.bot.send_message(chat_id=user_id, text=message)
+        except Exception as e:
+            logger.warning(f"No se pudo enviar ranking semanal a {user_id}: {e}")
+
+def schedule_weekly_referral_rewards():
+    """Programa el envío semanal de recompensas de referidos los lunes a las 12:00."""
+    scheduler = AsyncIOScheduler(timezone=pytz.timezone('Europe/Madrid'))
+    scheduler.add_job(lambda: asyncio.create_task(send_weekly_referral_rewards()), 'cron', day_of_week='mon', hour=12, minute=0)
+    scheduler.start()
+async def mi_posicion_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Comando /mi_posicion - Ranking de referidos premium activos en tiempo real
+    """
+    user_id = str(update.effective_user.id)
+    users = list(users_manager.users.values())
+    # Contar solo referidos premium activos
+    ranking = []
+    for user in users:
+        # Contar referidos premium activos
+        premium_refs = [ref for ref in getattr(user, 'referred_users', [])
+                        if ref in users_manager.users and users_manager.users[ref].is_premium_active()]
+        ranking.append({
+            'user_id': user.chat_id,
+            'username': getattr(user, 'username', user.chat_id),
+            'count': len(premium_refs)
+        })
+    # Ordenar de mayor a menor
+    ranking.sort(key=lambda x: x['count'], reverse=True)
+    # Buscar posición del usuario
+    pos = next((i for i, r in enumerate(ranking) if r['user_id'] == user_id), None)
+    if pos is None:
+        await update.message.reply_text("No tienes referidos registrados.")
+        return
+    user_count = ranking[pos]['count']
+    leader = ranking[0]
+    leader_name = leader['username'] if leader['user_id'] != user_id else 'Tú'
+    leader_count = leader['count']
+    next_goal = leader_count + 1 if pos == 0 else ranking[pos-1]['count'] + 1
+    msg = (
+        f"🏆 Tu posición en el ranking de referidos: {pos+1}º\n"
+        f"🔹 Referidos premium activos: {user_count}\n"
+        f"🔹 Referido líder: {leader_name} ({leader_count} referidos)\n"
+        f"🔹 Tu próxima meta: {next_goal} referidos para superar al líder"
+    )
+    await update.message.reply_text(msg)
+# ========== ENVÍO AUTOMÁTICO DE RESÚMENES DIARIOS Y SEMANALES =============
+async def send_global_summary_to_all_users(summary_type: str = 'daily'):
+    """
+    Envía el resumen global (diario o semanal) a todos los usuarios registrados.
+    summary_type: 'daily' o 'weekly'
+    """
+    days = 1 if summary_type == 'daily' else 7
+    stats = performance_tracker.get_global_stats(days=days)
+    if stats['total_predictions'] == 0:
+        message = f"📊 RESUMEN {'DIARIO' if days==1 else 'SEMANAL'}\n\nNo hubo pronósticos verificados en este periodo."
+    else:
+        message = (
+            f"📊 *RESUMEN {'DIARIO' if days==1 else 'SEMANAL'} DEL BOT*\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"Total pronósticos: {stats['total_predictions']}\n"
+            f"✅ Aciertos: {stats['won']}\n"
+            f"❌ Fallos: {stats['lost']}\n"
+            f"⏳ Pendientes: {stats['pending']}\n"
+            f"Win Rate: {stats['win_rate']}%\n"
+            f"ROI: {stats['roi']}%\n"
+            f"Ganancia/Pérdida: {stats['total_profit']}\n"
+        )
+    # Enviar a todos los usuarios
+    all_users = users_manager.users.keys()
+    for user_id in all_users:
+        try:
+            await application.bot.send_message(chat_id=user_id, text=message, parse_mode='Markdown')
+        except TelegramError as e:
+            logger.warning(f"No se pudo enviar resumen a {user_id}: {e}")
+
+def schedule_summaries():
+    """Programa el envío diario y semanal de resúmenes a las 12:00."""
+    scheduler = AsyncIOScheduler(timezone=pytz.timezone('Europe/Madrid'))
+    # Diario: todos los días a las 12:00
+    scheduler.add_job(lambda: asyncio.create_task(send_global_summary_to_all_users('daily')), 'cron', hour=12, minute=0)
+    # Semanal: lunes a las 12:00
+    scheduler.add_job(lambda: asyncio.create_task(send_global_summary_to_all_users('weekly')), 'cron', day_of_week='mon', hour=12, minute=0)
+    scheduler.start()
+
 
 
 # ============================================================================
@@ -56,78 +216,48 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Comando /stats - Muestra estadísticas de performance del bot
     """
     try:
-        # Importar base de datos
-        try:
-            from data.historical_db import historical_db
-            
-            # Obtener performance
-            perf_7d = historical_db.get_bot_performance(days=7)
-            perf_30d = historical_db.get_bot_performance(days=30)
-            
-            if perf_7d['total_predictions'] == 0 and perf_30d['total_predictions'] == 0:
-                await update.message.reply_text(
-                    "📊 **ESTADÍSTICAS DEL BOT**\n\n"
-                    "⏳ Aún no hay predicciones verificadas.\n"
-                    "El bot está recopilando datos...\n\n"
-                    "Vuelve en 24-48 horas para ver estadísticas reales."
-                )
-                return
-            
-            # Formatear mensaje
-            message = "📊 **PERFORMANCE DEL BOT**\n\n"
-            
-            if perf_7d['total_predictions'] > 0:
-                message += f"**📅 Últimos 7 días:**\n"
-                message += f"• Predicciones: {perf_7d['total_predictions']}\n"
-                message += f"• Correctas: {perf_7d['correct']}\n"
-                message += f"• Accuracy: {perf_7d['accuracy']*100:.1f}%\n"
-                message += f"• ROI: {perf_7d['roi']*100:+.1f}%\n"
-                message += f"• Profit: ${perf_7d['total_profit']:+.2f}\n\n"
-            
-            if perf_30d['total_predictions'] > 0:
-                message += f"**📅 Últimos 30 días:**\n"
-                message += f"• Predicciones: {perf_30d['total_predictions']}\n"
-                message += f"• Correctas: {perf_30d['correct']}\n"
-                message += f"• Accuracy: {perf_30d['accuracy']*100:.1f}%\n"
-                message += f"• ROI: {perf_30d['roi']*100:+.1f}%\n"
-                message += f"• Profit: ${perf_30d['total_profit']:+.2f}\n\n"
-            
-            # Obtener últimas predicciones
-            import sqlite3
-            conn = sqlite3.connect('data/historical.db')
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                SELECT selection, odds, was_correct, profit_loss
-                FROM predictions
-                WHERE actual_result IS NOT NULL
-                ORDER BY predicted_at DESC
-                LIMIT 5
-            """)
-            
-            recent = cursor.fetchall()
-            conn.close()
-            
-            if recent:
-                message += "**📋 Últimas 5 apuestas:**\n"
-                for sel, odds, correct, profit in recent:
-                    emoji = "✅" if correct else "❌"
-                    message += f"{emoji} {sel} ({odds:.2f}) - ${profit:+.2f}\n"
-            
-            message += "\n💡 Stats actualizadas diariamente a las 2 AM"
-            
-            await update.message.reply_text(message)
-            
-        except ImportError:
+        # Obtener estadísticas globales de Supabase
+        stats = performance_tracker.get_global_stats(days=30)
+        if stats['total_predictions'] == 0:
             await update.message.reply_text(
-                "⚠️ Sistema de estadísticas no disponible.\n"
-                "Contacta al administrador."
+                "📊 **ESTADÍSTICAS DEL BOT**\n\n"
+                "⏳ Aún no hay predicciones verificadas.\n"
+                "El bot está recopilando datos...\n\n"
+                "Vuelve en 24-48 horas para ver estadísticas reales."
             )
-            
+            return
+
+        # Formatear mensaje
+        message = (
+            "📊 **PERFORMANCE DEL BOT** (Últimos 30 días)\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📈 *RENDIMIENTO GLOBAL:*\n"
+            f"  Total pronósticos: {stats['total_predictions']}\n"
+            f"  ✅ Aciertos: {stats['won']}\n"
+            f"  ❌ Fallos: {stats['lost']}\n"
+            f"  ⏳ Pendientes: {stats['pending']}\n\n"
+            f"🎯 *EFECTIVIDAD:*\n"
+            f"  Win Rate: {stats['win_rate']}%\n"
+            f"  ROI: {stats['roi']:+.1f}%\n\n"
+            f"💰 *FINANCIERO:*\n"
+            f"  Stake total: ${stats['total_stake']:.2f}\n"
+            f"  Ganancia/Pérdida: ${stats['total_profit']:+.2f}\n\n"
+            f"📊 *ANÁLISIS:*\n"
+            f"  Cuota promedio: {stats['avg_odd']:.2f}\n"
+            f"  Mejor deporte: {stats['best_sport']}\n\n"
+        )
+        if stats['win_rate'] >= 55:
+            message += "✅ *Rendimiento EXCELENTE* - Por encima del umbral de rentabilidad\n"
+        elif stats['win_rate'] >= 50:
+            message += "📊 *Rendimiento BUENO* - En zona de rentabilidad\n"
+        else:
+            message += "⚠️ *Rendimiento en desarrollo* - Se optimiza continuamente\n"
+        message += "\n💡 Nota: Los resultados se verifican automáticamente tras finalizar cada evento."
+        await update.message.reply_text(message)
     except Exception as e:
         logger.error(f"Error en comando /stats: {e}")
         await update.message.reply_text(
-            "❌ Error al obtener estadísticas. Intenta de nuevo."
+            f"❌ Error al obtener estadísticas: {e}. Intenta de nuevo o contacta soporte."
         )
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -179,10 +309,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"*Tu enlace:*\n"
             f"`{referral_link}`\n\n"
             "💰 *SISTEMA DE REFERIDOS:*\n"
-            "• Ganas el *10% de comision* ($5) por cada amigo que pague Premium ($50)\n"
+            "• Ganas el *10% de comisión* (1,5 €) por cada amigo que pague Premium (15 €)\n"
             "• Ganas *1 semana gratis* por cada 3 amigos que paguen\n"
-            "• Retiros desde $5 USD\n"
-            "• Sin limite de ganancias\n\n"
+            "• Retiros desde 5 €\n"
+            "• Sin límite de ganancias\n\n"
         )
     else:
         # Ya estaba registrado, obtener stats
@@ -194,7 +324,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"*Tu codigo de referido:* `{referral_code}`\n"
                 f"*Tu enlace:*\n"
                 f"`{referral_link}`\n\n"
-                "💰 *Comparte y gana:* 10% comision + 1 semana gratis cada 3 referidos\n\n"
+                "💰 *Comparte y gana:* 10% comisión (1,5 €) + 1 semana gratis cada 3 referidos\n\n"
             )
     
     welcome_text += (
@@ -241,8 +371,8 @@ async def cmd_referidos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not stats:
         await update.message.reply_text(
-            "No estas registrado en el sistema de referidos.\n"
-            "Usa /start para registrarte."
+            "❌ No estás registrado en el sistema de referidos.\n"
+            "Usa /start para registrarte. Si el problema persiste, contacta soporte."
         )
         return
     
@@ -257,14 +387,14 @@ async def cmd_referidos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"  Pagaron Premium: {stats['paid_referrals']}\n"
         f"  Pendientes: {stats['pending_referrals']}\n\n"
         "*GANANCIAS:*\n"
-        f"  Saldo actual: ${stats['balance_usd']:.2f}\n"
-        f"  Total ganado: ${stats['total_earned']:.2f}\n\n"
+        f"  Saldo actual: {stats['balance_usd']:.2f} €\n"
+        f"  Total ganado: {stats['total_earned']:.2f} €\n\n"
         "*SEMANAS GRATIS:*\n"
         f"  Ganadas: {stats['free_weeks_earned']}\n"
         f"  Disponibles: {stats['free_weeks_pending']}\n"
-        f"  Proxima en: {stats['next_free_week_in']} referidos mas\n\n"
+        f"  Próxima en: {stats['next_free_week_in']} referidos más\n\n"
         "*RECOMPENSAS:*\n"
-        f"  Por cada referido: $5.00 USD\n"
+        f"  Por cada referido: 1,5 €\n"
         f"  Cada 3 pagos: 1 semana Premium gratis\n"
     )
     
@@ -296,18 +426,16 @@ async def cmd_canjear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     success, message = referral_system.redeem_free_week(user_id)
     
     if success:
-        # Activar Premium por 1 semana en el sistema de usuarios
         user = users_manager.get_user(user_id)
         if user:
             user.add_free_premium_week()
             users_manager.update_user(user)
-            
-            message += "\n\n✅ Tu suscripcion Premium ha sido extendida por 7 dias!"
-            
-            logger.info(f"Usuario {user_id} canjeo semana Premium gratis")
+            message += "\n\n✅ Tu suscripción Premium ha sido extendida por 7 días!"
+            logger.info(f"Usuario {user_id} canjeó semana Premium gratis")
         else:
-            message += "\n\n⚠️ Error activando Premium. Contacta al administrador."
-    
+            message += "\n\n⚠️ Error activando Premium. Contacta al administrador o soporte."
+    else:
+        message += "\n\n❌ No tienes semanas gratis disponibles o hubo un error. Si crees que es un error, contacta soporte."
     await update.message.reply_text(message)
 
 
@@ -321,10 +449,11 @@ async def cmd_retirar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Validar argumentos
     if not context.args or len(context.args) < 1:
         await update.message.reply_text(
+            "❌ Debes indicar el monto a retirar.\n"
             "*Uso:* `/retirar [monto]`\n\n"
             "*Ejemplo:* `/retirar 25.50`\n\n"
-            "Tu saldo sera verificado y el retiro procesado por el administrador.\n"
-            "*Monto minimo:* $5.00 USD",
+            "Tu saldo será verificado y el retiro procesado por el administrador.\n"
+            "*Monto mínimo:* $5.00 USD",
             parse_mode='Markdown'
         )
         return
@@ -369,9 +498,9 @@ async def cmd_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Muestra información de la suscripción Premium
     """
     premium_text = (
-        "*SUSCRIPCION PREMIUM* ⭐\n\n"
-        "*Precio:* $50 USD por semana\n\n"
-        "*QUE HACE EL BOT:*\n\n"
+        "*SUSCRIPCIÓN PREMIUM* ⭐\n\n"
+        "*Precio:* 15 € por semana\n\n"
+        "*¿QUÉ HACE EL BOT?*\n\n"
         "🔍 *Analisis de Mercado:*\n"
         "• Escanea odds de multiples casas de apuestas\n"
         "• Detecta disparidades y oportunidades de valor\n"
@@ -412,11 +541,17 @@ async def cmd_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📊 Ver mis referidos", callback_data="ver_referidos")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
-        premium_text,
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
+    try:
+        await update.message.reply_text(
+            premium_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.error(f"Error mostrando info premium: {e}")
+        await update.message.reply_text(
+            "❌ Error mostrando la información de Premium. Intenta de nuevo o contacta soporte."
+        )
 
 
 async def cmd_estadisticas(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -654,12 +789,12 @@ async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif data == "info_premium":
         # Mostrar info de Premium
         await query.edit_message_text(
-            "*SUSCRIPCION PREMIUM* ⭐\n\n"
-            "*Precio:* $50 USD/semana\n\n"
+            "*SUSCRIPCIÓN PREMIUM* ⭐\n\n"
+            "*Precio:* 15 € por semana\n\n"
             "*Incluye:*\n"
             "✅ 5 alertas diarias de calidad\n"
-            "✅ Analisis con Kelly Criterion\n"
-            "✅ Pronosticos con IA\n"
+            "✅ Análisis con Kelly Criterion\n"
+            "✅ Pronósticos con IA\n"
             "✅ Tracking de ROI\n\n"
             "Contacta al administrador para suscribirte.\n\n"
             "O invita 3 amigos y gana 1 semana gratis!",
@@ -763,18 +898,10 @@ async def notify_admin_withdrawal(context: ContextTypes.DEFAULT_TYPE, user_id: s
 # ============================================================================
 
 def main():
-    """Inicia el bot de comandos"""
-    if not BOT_TOKEN:
-        logger.error("BOT_TOKEN no configurado en .env")
-        return
-    
-    logger.info("Iniciando Bot de Comandos de Telegram...")
-    logger.info(f"Admin: {ADMIN_CHAT_ID}")
-    
-    # Crear aplicación
+    global application
+    schedule_weekly_referral_rewards()
     application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Registrar comandos de usuario
+    application.add_handler(CommandHandler("mi_posicion", mi_posicion_command))
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("referidos", cmd_referidos))
     application.add_handler(CommandHandler("canjear", cmd_canjear))
@@ -782,22 +909,17 @@ def main():
     application.add_handler(CommandHandler("premium", cmd_premium))
     application.add_handler(CommandHandler("estadisticas", cmd_estadisticas))
     application.add_handler(CommandHandler("stats", stats_command))
-    
-    # Registrar comandos de admin
     application.add_handler(CommandHandler("aprobar_retiro", cmd_aprobar_retiro))
     application.add_handler(CommandHandler("reporte_referidos", cmd_reporte_referidos))
     application.add_handler(CommandHandler("detectar_fraude", cmd_detectar_fraude))
-    
-    # Registrar callback query handler (botones)
     application.add_handler(CallbackQueryHandler(callback_query_handler))
-    
     logger.info("Bot de comandos iniciado correctamente!")
     logger.info("Comandos disponibles: /start, /referidos, /canjear, /retirar, /premium, /stats")
     logger.info("Comandos admin: /aprobar_retiro, /reporte_referidos, /detectar_fraude")
+    schedule_summaries()
     
-    # Iniciar bot
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
-
+    # Simplemente iniciar el bot sin configuraciones especiales
+    application.run_polling()
 
 if __name__ == '__main__':
     main()

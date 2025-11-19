@@ -89,7 +89,7 @@ SPORTS = os.getenv("SPORTS", "basketball_nba,soccer_epl,soccer_spain_la_liga,ten
 # ConfiguraciÃƒÂ³n de tiempo
 AMERICA_TZ = ZoneInfo("America/New_York")  # Hora de AmÃƒÂ©rica
 DAILY_START_HOUR = 6  # 6 AM
-UPDATE_INTERVAL_MINUTES = 10  # Actualizar cada 10 minutos (mantiene Render activo)
+UPDATE_INTERVAL_MINUTES = 14  # Actualizar cada 14 minutos (optimiza consumo de créditos)
 ALERT_WINDOW_HOURS = 8  # Alertar cuando falten menos de 8 horas (ampliado para más picks)
 
 # Configuracin adicional

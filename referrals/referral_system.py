@@ -29,7 +29,7 @@ class ReferralSystem:
     
     # Configuración de recompensas
     COMMISSION_PERCENTAGE = 10.0  # 10% de comisión por referido
-    PREMIUM_PRICE_USD = 50.0  # Precio semanal de Premium
+    PREMIUM_PRICE_EUR = 15.0  # Precio semanal de Premium (euros)
     FREE_WEEK_THRESHOLD = 3  # 3 referidos pagos = 1 semana gratis
     REWARD_PER_REFERRAL = PREMIUM_PRICE_USD * (COMMISSION_PERCENTAGE / 100)  # $5 por referido
     

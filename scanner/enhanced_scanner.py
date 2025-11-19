@@ -13,6 +13,25 @@ logger = logging.getLogger(__name__)
 
 
 class EnhancedValueScanner(ValueScanner):
+        def adjust_candidate_odds(self, candidate: Dict, all_candidates: List[Dict]) -> Dict:
+            """
+            Si la cuota es >2.1, busca en el mismo partido y mercado una alternativa entre 1.7 y 1.9.
+            Si la encuentra, retorna esa alternativa; si no, retorna el original.
+            """
+            odds = candidate.get('odds', 0)
+            if odds <= 2.1:
+                return candidate
+            # Buscar alternativas en el mismo partido y mercado
+            event_id = candidate.get('id')
+            market_key = candidate.get('market_key')
+            # Buscar en all_candidates (ya escaneados)
+            alternatives = [c for c in all_candidates
+                            if c.get('id') == event_id and c.get('market_key') == market_key
+                            and 1.7 <= c.get('odds', 0) <= 1.9]
+            if alternatives:
+                # Elegir la de mayor valor
+                return max(alternatives, key=lambda x: x.get('value', 0))
+            return candidate
     """Scanner de value bets mejorado con análisis de movimiento de líneas"""
     
     def __init__(self, *args, **kwargs):
@@ -38,18 +57,14 @@ class EnhancedValueScanner(ValueScanner):
             if not candidates:
                 return []
             
-            # Enriquecer con información de line movement
+            # Enriquecer con información de line movement y ajustar cuotas si es necesario
             enhanced_candidates = []
-            
             for candidate in candidates:
                 event_id = candidate.get('id')
                 selection = candidate.get('selection')
-                
                 # Obtener movimiento de línea
                 movement = self.line_tracker.get_line_movement_summary(event_id, selection)
-                
                 if movement:
-                    # Agregar información de movimiento
                     candidate['line_movement'] = {
                         'opening_odds': movement['opening_odds'],
                         'current_odds': movement['current_odds'],
@@ -57,36 +72,26 @@ class EnhancedValueScanner(ValueScanner):
                         'trend': movement['trend'],
                         'is_favorable': movement['is_favorable']
                     }
-                    
-                    # Calcular score de confianza
                     confidence_score = self._calculate_confidence(candidate, movement)
                     candidate['confidence_score'] = confidence_score
                     candidate['confidence_level'] = self._confidence_level(confidence_score)
-                    
-                    # Obtener recomendación de timing
                     timing = self.line_tracker.get_best_odds_timing(event_id, selection)
                     candidate['timing_recommendation'] = timing.get('recommendation', 'unknown')
-                    
-                    # Detectar si hay steam move
                     steam_moves = self.line_tracker.detect_steam_moves(event_id)
                     candidate['has_steam_move'] = any(
                         sm['selection'] == selection for sm in steam_moves
                     )
                 else:
-                    # Sin información de movimiento
                     candidate['line_movement'] = None
-                    candidate['confidence_score'] = 50  # Score medio por defecto
+                    candidate['confidence_score'] = 50
                     candidate['confidence_level'] = 'medium'
                     candidate['timing_recommendation'] = 'insufficient_data'
                     candidate['has_steam_move'] = False
-                
-                enhanced_candidates.append(candidate)
-            
-            # Ordenar por confidence score (mayor a menor)
+                # Ajustar cuota si corresponde
+                adjusted = self.adjust_candidate_odds(candidate, candidates)
+                enhanced_candidates.append(adjusted)
             enhanced_candidates.sort(key=lambda x: x.get('confidence_score', 0), reverse=True)
-            
             logger.info(f"Enhanced scan: {len(enhanced_candidates)} candidates with movement analysis")
-            
             return enhanced_candidates
             
         except Exception as e:

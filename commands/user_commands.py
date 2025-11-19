@@ -118,7 +118,17 @@ async def handle_upgrade_command(chat_id: str) -> str:
         "⚡ Detección de sharp money signals\n"
         "🔍 Análisis de consensus entre bookmakers\n"
         "📊 Monitoreo de movimientos de línea\n\n"
-        "PRECIO: Consultar\n\n"
+        "💶 *IMPORTANTE*\n"
+        "El bot cobrará el 20% de las ganancias generadas cada semana (según tu bank dinámico).\n"
+        "El cobro se realiza todos los lunes temprano, sobre las ganancias de la semana anterior.\n"
+        "Para seguir en Premium, debes contactar con el administrador y realizar el pago correspondiente.\n"
+        "Si no pagas, serás retirado del Premium.\n\n"
+        "🔄 *REPARTO DEL 20% COBRADO*\n"
+        "- El 50% se destina a arreglos y mejoras del bot.\n"
+        "- El otro 50% se reparte entre los 3 usuarios que más referidos premium hayan traído esa semana:\n"
+        "   • 1er lugar: 50% de ese fondo\n"
+        "   • 2do lugar: 30%\n"
+        "   • 3er lugar: 20%\n\n"
         "💬 Contacta para activar tu cuenta premium:\n"
         "[Contacto del administrador]"
     )
@@ -261,7 +271,7 @@ async def handle_mi_link_command(chat_id: str) -> str:
         f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"🔗 {referral_link}\n\n"
         f"💰 GANA DINERO REAL:\n"
-        f"👥 Por cada referido que pague ${50:.0f} USD\n"
+        f"👥 Por cada referido que pague 15€\n"
         f"📈 Ganas ${5:.0f} USD de comisión (10%)\n\n"
         f"🎁 SEMANAS GRATIS:\n"
         f"🏆 Cada 3 referidos pagos = 1 semana premium gratis\n\n"
@@ -370,7 +380,7 @@ async def handle_pagar_command(chat_id: str, args: str) -> str:
         return (
             f"❌ Formato incorrecto.\n\n"
             f"Uso: /pagar <monto>\n"
-            f"Ejemplo: /pagar 50"
+            f"Ejemplo: /pagar 15"
         )
 
 
